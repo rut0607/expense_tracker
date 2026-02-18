@@ -10,6 +10,11 @@ export default function Navbar() {
 
   const isActive = (path) => pathname === path
 
+  // Don't show navbar on login/signup pages
+  if (pathname === '/login' || pathname === '/signup') {
+    return null
+  }
+
   return (
     <nav className="bg-white shadow">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -54,11 +59,22 @@ export default function Navbar() {
               >
                 Settings
               </Link>
+
+<Link
+  href="/analytics"
+  className={`px-3 py-2 rounded-md text-sm font-medium ${
+    isActive('/analytics') 
+      ? 'bg-blue-100 text-blue-700' 
+      : 'text-gray-700 hover:text-blue-600'
+  }`}
+>
+  Analytics
+</Link>
               
               <div className="border-l h-8 mx-2 border-gray-300"></div>
               
               <span className="text-sm text-gray-600">
-                {session.user.name || session.user.email}
+                {session.user?.name || session.user?.email}
               </span>
               
               <button
