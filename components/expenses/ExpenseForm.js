@@ -8,6 +8,7 @@ export default function ExpenseForm({ categories, onSave }) {
   const [fieldValues, setFieldValues] = useState({})
   const [calculatedTotal, setCalculatedTotal] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
 
@@ -41,7 +42,17 @@ export default function ExpenseForm({ categories, onSave }) {
     setCalculatedTotal(total)
   }, [fieldValues, selectedCategoryData])
 
-  const handleFieldChange = (fieldName, value) => {
+  const handleFieldChange = (fieldName, value, fieldType) => {
+    // Validate based on field type
+    if (fieldType === 'number' && value !== '') {
+      const numValue = parseFloat(value)
+      if (isNaN(numValue) || numValue < 0) {
+        setError(`${fieldName} must be a positive number`)
+        return
+      }
+    }
+    
+    setError('')
     setFieldValues(prev => ({
       ...prev,
       [fieldName]: value
@@ -50,8 +61,10 @@ export default function ExpenseForm({ categories, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
+    
     if (!selectedCategory) {
-      alert('Please select a category')
+      setError('Please select a category')
       return
     }
 
@@ -61,25 +74,37 @@ export default function ExpenseForm({ categories, onSave }) {
     )
 
     if (missingFields?.length > 0) {
-      alert(`Please fill in: ${missingFields.map(f => f.field_name).join(', ')}`)
+      setError(`Please fill in: ${missingFields.map(f => f.field_name).join(', ')}`)
+      return
+    }
+
+    // Validate total
+    if (calculatedTotal <= 0) {
+      setError('Total amount must be greater than 0')
       return
     }
 
     setLoading(true)
     
-    await onSave({
-      category_id: selectedCategory,
-      amount: calculatedTotal, // Use calculated total instead of separate amount field
-      description,
-      fields: fieldValues,
-      date: new Date().toISOString().split('T')[0]
-    })
+    try {
+      await onSave({
+        category_id: selectedCategory,
+        amount: calculatedTotal,
+        description: description.trim(),
+        fields: fieldValues,
+        date: new Date().toISOString().split('T')[0]
+      })
 
-    // Reset form
-    setFieldValues({})
-    setDescription('')
-    setSelectedCategory('')
-    setLoading(false)
+      // Reset form on success
+      setFieldValues({})
+      setDescription('')
+      setSelectedCategory('')
+      setError('')
+    } catch (err) {
+      setError('Failed to save expense. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -95,6 +120,7 @@ export default function ExpenseForm({ categories, onSave }) {
               onClick={() => {
                 setSelectedCategory(cat.id)
                 setFieldValues({})
+                setError('')
               }}
               className={`p-3 border rounded-lg flex flex-col items-center transition ${
                 selectedCategory === cat.id 
@@ -109,6 +135,13 @@ export default function ExpenseForm({ categories, onSave }) {
           ))}
         </div>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
 
       {selectedCategoryData && (
         <>
@@ -128,8 +161,13 @@ export default function ExpenseForm({ categories, onSave }) {
                   <input
                     type="number"
                     step="0.01"
+                    min="0"
                     value={fieldValues[field.field_name] || ''}
-                    onChange={(e) => handleFieldChange(field.field_name, e.target.value)}
+                    onChange={(e) => handleFieldChange(
+                      field.field_name, 
+                      e.target.value,
+                      field.field_type
+                    )}
                     className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
                     placeholder={`Enter ${field.field_name}`}
                     required={field.is_required}
@@ -144,6 +182,7 @@ export default function ExpenseForm({ categories, onSave }) {
                     className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
                     placeholder={`Enter ${field.field_name}`}
                     required={field.is_required}
+                    maxLength="100"
                   />
                 )}
 
@@ -165,14 +204,16 @@ export default function ExpenseForm({ categories, onSave }) {
           </div>
 
           {/* Calculated Total Display */}
-          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-700">Total:</span>
-              <span className="text-xl font-bold text-blue-600">
-                ₹{calculatedTotal.toFixed(2)}
-              </span>
+          {calculatedTotal > 0 && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-gray-700">Total:</span>
+                <span className="text-xl font-bold text-blue-600">
+                  ₹{calculatedTotal.toFixed(2)}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Description (optional) */}
           <div className="mb-4">
@@ -180,16 +221,17 @@ export default function ExpenseForm({ categories, onSave }) {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full p-2 border rounded"
+              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
               rows="2"
               placeholder="Add notes about this expense..."
+              maxLength="200"
             />
           </div>
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 transition disabled:bg-blue-300"
+            disabled={loading || calculatedTotal <= 0}
+            className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 transition disabled:bg-blue-300 disabled:cursor-not-allowed"
           >
             {loading ? 'Adding...' : 'Add Expense'}
           </button>

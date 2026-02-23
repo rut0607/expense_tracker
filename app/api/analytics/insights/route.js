@@ -16,7 +16,7 @@ export async function GET() {
     const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
     const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0)
 
-    // Fetch current month expenses
+    // Fetch current month expenses with categories
     const { data: currentMonth } = await supabase
       .from('expenses')
       .select('amount, expense_date, categories(name)')
@@ -31,51 +31,63 @@ export async function GET() {
       .gte('expense_date', startOfLastMonth.toISOString())
       .lte('expense_date', endOfLastMonth.toISOString())
 
-    // Fetch all expenses for trend analysis
-    const { data: allExpenses } = await supabase
-      .from('expenses')
-      .select('amount, expense_date, categories(name)')
+    // Fetch budgets for current month
+    const { data: budgets } = await supabase
+      .from('budgets')
+      .select('monthly_limit, categories(name)')
       .eq('user_id', userId)
-      .order('expense_date', { ascending: false })
+      .eq('month', startOfMonth.toISOString())
 
-    // 1. Monthly comparison
+    // Fetch user preferences for allowance
+    const { data: prefs } = await supabase
+      .from('user_preferences')
+      .select('monthly_allowance')
+      .eq('user_id', userId)
+      .single()
+
+    // Calculate totals
     const currentTotal = currentMonth?.reduce((sum, e) => sum + e.amount, 0) || 0
     const lastTotal = lastMonth?.reduce((sum, e) => sum + e.amount, 0) || 0
     const monthlyChange = lastTotal ? ((currentTotal - lastTotal) / lastTotal * 100).toFixed(1) : null
 
-    // 2. Category breakdown for current month
-    const categoryTotals = {}
+    // Calculate savings if allowance exists
+    const allowance = prefs?.monthly_allowance || 0
+    const saved = allowance > 0 ? allowance - currentTotal : 0
+
+    // Category breakdown with budget comparison
+    const categoryData = {}
     currentMonth?.forEach(e => {
       const catName = e.categories?.name || 'Other'
-      categoryTotals[catName] = (categoryTotals[catName] || 0) + e.amount
+      if (!categoryData[catName]) {
+        categoryData[catName] = {
+          spent: 0,
+          budget: null
+        }
+      }
+      categoryData[catName].spent += e.amount
     })
-    const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0]
 
-    // 3. Detect unusual spending (compared to daily average)
-    const dailyAvg = currentMonth?.length ? currentTotal / currentMonth.length : 0
-    const unusualExpenses = currentMonth
-      ?.filter(e => e.amount > dailyAvg * 2) // 2x average
-      .map(e => ({
-        date: e.expense_date,
-        amount: e.amount,
-        category: e.categories?.name || 'Other',
-        reason: `2x higher than your daily average of ₹${dailyAvg.toFixed(0)}`
-      }))
+    // Add budget info
+    budgets?.forEach(b => {
+      const catName = b.categories?.name
+      if (catName && categoryData[catName]) {
+        categoryData[catName].budget = b.monthly_limit
+      }
+    })
 
-    // 4. Spending trend (compare last 7 days with previous 7 days)
-    const sevenDaysAgo = new Date(today)
-    sevenDaysAgo.setDate(today.getDate() - 7)
-    const fourteenDaysAgo = new Date(today)
-    fourteenDaysAgo.setDate(today.getDate() - 14)
+    // Find categories near/over budget
+    const budgetAlerts = []
+    Object.entries(categoryData).forEach(([name, data]) => {
+      if (data.budget && data.spent > data.budget) {
+        budgetAlerts.push(`⚠️ You've exceeded your ${name} budget by ₹${(data.spent - data.budget).toFixed(0)}`)
+      } else if (data.budget && data.spent > data.budget * 0.8) {
+        budgetAlerts.push(`📊 You're close to your ${name} budget (${Math.round((data.spent/data.budget)*100)}% used)`)
+      }
+    })
 
-    const last7Days = currentMonth?.filter(e => new Date(e.expense_date) >= sevenDaysAgo) || []
-    const prev7Days = currentMonth?.filter(e => 
-      new Date(e.expense_date) >= fourteenDaysAgo && new Date(e.expense_date) < sevenDaysAgo
-    ) || []
-
-    const last7Total = last7Days.reduce((sum, e) => sum + e.amount, 0)
-    const prev7Total = prev7Days.reduce((sum, e) => sum + e.amount, 0)
-    const weeklyChange = prev7Total ? ((last7Total - prev7Total) / prev7Total * 100).toFixed(1) : null
+    // Find top category
+    const topCategory = Object.entries(categoryData)
+      .sort((a, b) => b[1].spent - a[1].spent)[0]
 
     // Compile insights
     const insights = []
@@ -93,31 +105,47 @@ export async function GET() {
       insights.push({
         type: 'category',
         title: '💰 Top Category',
-        message: `You spent the most on ${topCategory[0]}: ₹${topCategory[1].toFixed(0)} this month.`,
+        message: `You spent the most on ${topCategory[0]}: ₹${topCategory[1].spent.toFixed(0)} this month.`,
         category: topCategory[0],
-        amount: topCategory[1]
+        amount: topCategory[1].spent
       })
     }
 
-    if (unusualExpenses?.length) {
+    if (budgetAlerts.length > 0) {
       insights.push({
         type: 'alert',
-        title: '⚠️ Unusual Spending Detected',
-        message: `Found ${unusualExpenses.length} expense(s) significantly above your average.`,
-        details: unusualExpenses.slice(0, 3) // show top 3
+        title: '⚠️ Budget Alerts',
+        message: budgetAlerts.join('\n')
       })
     }
 
-    if (weeklyChange !== null) {
+    if (saved > 0) {
       insights.push({
-        type: 'trend',
-        title: weeklyChange > 0 ? '📊 Upward Trend' : '📊 Downward Trend',
-        message: `Your spending in the last 7 days is ${Math.abs(weeklyChange)}% ${weeklyChange > 0 ? 'higher' : 'lower'} than the previous week.`,
-        value: weeklyChange
+        type: 'savings',
+        title: '💰 Savings Opportunity',
+        message: `You saved ₹${saved.toFixed(0)} this month. Consider investing in a low-cost index fund or building an emergency fund.`
+      })
+    } else if (saved < 0 && allowance > 0) {
+      insights.push({
+        type: 'alert',
+        title: '⚠️ Overspending Alert',
+        message: `You've spent ₹${Math.abs(saved).toFixed(0)} more than your allowance this month.`
       })
     }
 
-    return NextResponse.json({ insights, summary: { currentTotal, lastTotal, dailyAvg } })
+    // Calculate daily average
+    const dailyAvg = currentMonth?.length ? currentTotal / currentMonth.length : 0
+
+    return NextResponse.json({ 
+      insights, 
+      summary: { 
+        currentTotal, 
+        lastTotal, 
+        dailyAvg,
+        saved,
+        allowance
+      } 
+    })
   } catch (error) {
     console.error('Insights error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })

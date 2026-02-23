@@ -5,7 +5,6 @@ import { getTodayExpenses } from '@/utils/expenses'
 import { sendTelegramDocument, sendTelegramMessage } from '@/utils/telegram'
 import { generateInsights } from '@/utils/insights'
 
-// This endpoint will be called by cron-job.org
 export async function GET(request) {
   // Security: Check for secret key
   const authHeader = request.headers.get('authorization')
@@ -45,23 +44,29 @@ export async function GET(request) {
         console.log(`📊 Processing user ${user.user_id}`)
 
         // Get today's expenses
-        const { data: expenses } = await getTodayExpenses(user.user_id)
+        const { data: expenses, success: expSuccess } = await getTodayExpenses(user.user_id)
         
-        if (!expenses?.length) {
+        if (!expSuccess || !expenses?.length) {
           // Send gentle reminder to add expenses
           await sendTelegramMessage(
             user.telegram_chat_id,
-            '📝 *No expenses recorded today*\n\nDont forget to add your daily expenses to get insights and maintain your tracking streak!'
+            '📝 *No expenses recorded today*\n\nDon\'t forget to add your daily expenses to get insights and maintain your tracking streak!'
           )
           results.push({ userId: user.user_id, status: 'reminder_sent' })
           continue
         }
 
         // Get categories for PDF generation
-        const { data: categories } = await supabaseAdmin
+        const { data: categories, error: catError } = await supabaseAdmin
           .from('categories')
           .select('*')
           .eq('user_id', user.user_id)
+
+        if (catError || !categories) {
+          console.error(`❌ Error fetching categories for user ${user.user_id}:`, catError)
+          results.push({ userId: user.user_id, status: 'error', error: 'Failed to fetch categories' })
+          continue
+        }
 
         // Generate PDF
         const today = new Date().toISOString().split('T')[0]
@@ -69,25 +74,37 @@ export async function GET(request) {
 
         // Upload to Supabase storage
         const fileName = `expenses-${user.user_id}-${today}.pdf`
-        await supabaseAdmin.storage
+        const { error: uploadError } = await supabaseAdmin.storage
           .from('pdf-reports')
           .upload(fileName, pdfBuffer, { 
             contentType: 'application/pdf', 
             upsert: true 
           })
 
+        if (uploadError) {
+          console.error(`❌ Upload error for user ${user.user_id}:`, uploadError)
+          results.push({ userId: user.user_id, status: 'error', error: 'Failed to upload PDF' })
+          continue
+        }
+
         const { data: { publicUrl } } = supabaseAdmin.storage
           .from('pdf-reports')
           .getPublicUrl(fileName)
 
         // Send PDF via Telegram
-        await sendTelegramDocument(
+        const pdfResult = await sendTelegramDocument(
           user.telegram_chat_id,
           publicUrl,
           `Expense-Report-${today}.pdf`
         )
 
-        // Generate and send insights (using your existing function)
+        if (!pdfResult.success) {
+          console.error(`❌ Failed to send PDF to user ${user.user_id}:`, pdfResult.error)
+          results.push({ userId: user.user_id, status: 'error', error: 'Failed to send PDF' })
+          continue
+        }
+
+        // Generate and send insights
         const { insights, saved } = await generateInsights(user.user_id, supabaseAdmin)
         
         if (insights?.length) {
@@ -100,7 +117,11 @@ export async function GET(request) {
 
       } catch (userError) {
         console.error(`❌ Error processing user ${user.user_id}:`, userError)
-        results.push({ userId: user.user_id, status: 'error', error: userError.message })
+        results.push({ 
+          userId: user.user_id, 
+          status: 'error', 
+          error: userError.message || 'Unknown error' 
+        })
       }
     }
 

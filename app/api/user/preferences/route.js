@@ -28,12 +28,15 @@ export async function GET() {
         budget_month: null,
         monthly_allowance: 0,
         telegram_enabled: false,
+        telegram_chat_id: null,
         reminder_time: '21:00',
-        email_notifications: false
+        reminder_enabled: false,
+        email_notifications: false,
+        whatsapp_number: null
       }
     })
   } catch (error) {
-    console.error('Error in GET:', error)
+    console.error('Error in GET /api/user/preferences:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
@@ -46,21 +49,38 @@ export async function PATCH(request) {
     }
 
     const body = await request.json()
-    const { monthly_budget_total, budget_month, monthly_allowance } = body
+    
+    // Validate numeric fields
+    if (body.monthly_allowance !== undefined && (isNaN(body.monthly_allowance) || body.monthly_allowance < 0)) {
+      return NextResponse.json({ error: 'Invalid monthly allowance' }, { status: 400 })
+    }
 
-    // Prepare update object with only the fields that exist in your table
-    const updates = {}
-    if (monthly_budget_total !== undefined) updates.monthly_budget_total = monthly_budget_total
-    if (budget_month !== undefined) updates.budget_month = budget_month
-    if (monthly_allowance !== undefined) updates.monthly_allowance = monthly_allowance
-    updates.updated_at = new Date().toISOString()
+    if (body.monthly_budget_total !== undefined && (isNaN(body.monthly_budget_total) || body.monthly_budget_total < 0)) {
+      return NextResponse.json({ error: 'Invalid monthly budget' }, { status: 400 })
+    }
+
+    // Prepare update object with all possible fields
+    const updates = {
+      user_id: session.user.id,
+      updated_at: new Date().toISOString()
+    }
+
+    // Only include fields that are provided
+    const allowedFields = [
+      'monthly_budget_total', 'budget_month', 'monthly_allowance',
+      'telegram_enabled', 'telegram_chat_id', 'reminder_time',
+      'reminder_enabled', 'email_notifications', 'whatsapp_number'
+    ]
+
+    allowedFields.forEach(field => {
+      if (body[field] !== undefined) {
+        updates[field] = body[field]
+      }
+    })
 
     const { data, error } = await supabase
       .from('user_preferences')
-      .upsert({
-        user_id: session.user.id,
-        ...updates
-      })
+      .upsert(updates)
       .select()
 
     if (error) {
@@ -70,7 +90,7 @@ export async function PATCH(request) {
 
     return NextResponse.json({ success: true, data: data[0] })
   } catch (error) {
-    console.error('Error in PATCH:', error)
+    console.error('Error in PATCH /api/user/preferences:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

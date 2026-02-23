@@ -2,48 +2,6 @@
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 
 /**
- * Get monthly spending by category
- */
-async function getMonthlySpendingByCategory(userId, supabaseClient) {
-  try {
-    const today = new Date()
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString()
-    
-    const { data, error } = await supabaseClient
-      .from('expenses')
-      .select('amount, categories!inner(name, id)')
-      .eq('user_id', userId)
-      .gte('expense_date', firstDayOfMonth)
-
-    if (error) throw error
-    
-    const spendingMap = {}
-    const categoryDetails = {}
-    
-    data?.forEach(expense => {
-      const catId = expense.categories?.id
-      const catName = expense.categories?.name || 'Other'
-      
-      if (catId && !categoryDetails[catId]) {
-        categoryDetails[catId] = { name: catName }
-      }
-      
-      spendingMap[catId] = (spendingMap[catId] || 0) + (expense.amount || 0)
-    })
-    
-    return { 
-      success: true, 
-      spending: spendingMap,
-      categories: categoryDetails,
-      total: Object.values(spendingMap).reduce((a, b) => a + b, 0)
-    }
-  } catch (error) {
-    console.error('Error fetching monthly spending:', error)
-    return { success: false, error: error.message }
-  }
-}
-
-/**
  * Generate budget insights for a user with investment recommendations
  */
 export async function generateInsights(userId, supabaseClient) {
@@ -87,7 +45,7 @@ export async function generateInsights(userId, supabaseClient) {
     console.log('💵 [5] Fetching allowance...')
     const { data: prefs, error: prefError } = await supabaseClient
       .from('user_preferences')
-      .select('monthly_allowance')
+      .select('monthly_allowance, monthly_budget_total')
       .eq('user_id', userId)
       .maybeSingle()
 
@@ -100,16 +58,18 @@ export async function generateInsights(userId, supabaseClient) {
     // Calculate spending per category
     console.log('🧮 [6] Calculating spending per category...')
     const spendingMap = {}
-    const categoryMap = {} // Store category details
+    const categoryDetails = {}
     
     expenses?.forEach(e => {
-      const catId = e.categories?.id
       const catName = e.categories?.name || 'Other'
-      if (catId) {
-        categoryMap[catId] = { name: catName }
+      const catId = e.categories?.id
+      spendingMap[catName] = (spendingMap[catName] || 0) + (e.amount || 0)
+      if (catId && !categoryDetails[catName]) {
+        categoryDetails[catName] = {
+          icon: '📝',
+          color: '#3B82F6'
+        }
       }
-      const cat = catName
-      spendingMap[cat] = (spendingMap[cat] || 0) + (e.amount || 0)
     })
     console.log('📈 [6a] Spending map:', spendingMap)
 
@@ -123,7 +83,7 @@ export async function generateInsights(userId, supabaseClient) {
         color: b.categories?.color || '#3B82F6',
         limit: b.monthly_limit,
         spent: spent,
-        percentUsed: (spent / b.monthly_limit) * 100
+        percentUsed: b.monthly_limit > 0 ? (spent / b.monthly_limit) * 100 : 0
       }
     }) || []
     
@@ -132,6 +92,7 @@ export async function generateInsights(userId, supabaseClient) {
     // Calculate totals
     const totalSpent = expenses?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0
     const allowance = prefs?.monthly_allowance || 0
+    const overallBudget = prefs?.monthly_budget_total || 0
     const saved = allowance - totalSpent
     console.log('💰 [8] Totals - Spent:', totalSpent, 'Allowance:', allowance, 'Saved:', saved)
 
@@ -156,6 +117,18 @@ export async function generateInsights(userId, supabaseClient) {
       }
     }
 
+    // If no Gemini API key, use fallback
+    if (!GEMINI_API_KEY) {
+      console.log('⚠️ No Gemini API key, using fallback insights')
+      const fallbackInsights = [
+        ...budgetAlerts,
+        `You've spent ₹${totalSpent.toFixed(0)} this month.`,
+        ...budgetSummary.map(b => `• ${b.icon} ${b.category}: ₹${b.spent.toFixed(0)} / ₹${b.limit.toFixed(0)} (${Math.round(b.percentUsed)}%)`),
+        saved > 0 ? `You saved ₹${saved.toFixed(0)} – great job!` : `Try to save more next month.`
+      ]
+      return { insights: fallbackInsights, saved }
+    }
+
     // Build prompt for Gemini with investment focus
     const prompt = `
       You are a certified financial advisor specializing in the Indian market. Based on the user's financial data below, provide personalized investment advice:
@@ -167,13 +140,12 @@ export async function generateInsights(userId, supabaseClient) {
       - Total spent: ₹${totalSpent.toFixed(0)}
       - Monthly allowance: ₹${allowance.toFixed(0)}
       - Amount saved: ₹${saved.toFixed(0)}
+      - Overall budget: ₹${overallBudget.toFixed(0)}
 
-      IMPORTANT: The user is saving ₹${saved.toFixed(0)} this month.
-
-      Based on the savings amount, provide 2-3 specific investment recommendations suitable for the Indian market:
+      Based on the savings amount (₹${saved.toFixed(0)}), provide 2-3 specific investment recommendations suitable for the Indian market:
 
       ${saved < 1000 ? `
-      - Focus on building an emergency fund first
+      - Focus on building an emergency fund first (target: ₹${(totalSpent * 3).toFixed(0)})
       - Consider starting with a Recurring Deposit (RD) of ₹500/month
       - Look into liquid mutual funds for short-term parking
       ` : saved < 5000 ? `
@@ -198,16 +170,12 @@ export async function generateInsights(userId, supabaseClient) {
       Return ONLY a valid JSON array of 4-5 strings, each containing one insight or recommendation.
       Do not include markdown, explanations, or any text outside the JSON array.
       Be specific with fund names, percentages, and actionable advice.
-
-      Example format:
-      ["Start a monthly SIP of ₹2000 in SBI Bluechip Fund for long-term growth.", "Invest ₹3000 in PPF to build tax-free retirement corpus.", "Keep ₹15000 in liquid fund as emergency fund.", "Reduce dining out by 20% to save additional ₹1000/month."]
     `
     console.log('🤖 [9] Gemini prompt prepared, length:', prompt.length)
 
     // Using gemini-flash-latest (working model from your logs)
     const modelName = 'gemini-flash-latest'
     console.log(`🌐 [10] Calling Gemini API with ${modelName}...`)
-    console.log(`   URL: https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY ? '[KEY_EXISTS]' : '[MISSING]'}`)
     
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',

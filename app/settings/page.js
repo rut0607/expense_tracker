@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
-import { supabase } from '@/utils/supabase'
 
 export default function SettingsPage() {
   const { data: session, status } = useSession()
@@ -15,6 +14,9 @@ export default function SettingsPage() {
   const [message, setMessage] = useState({ type: '', text: '' })
   const [settings, setSettings] = useState({
     name: '',
+    email: '',
+    monthly_allowance: '',
+    monthly_budget_total: '',
     reminder_time: '21:00',
     reminder_enabled: false,
     email_notifications: false,
@@ -32,20 +34,22 @@ export default function SettingsPage() {
 
   const loadUserSettings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('user_preferences')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .single()
-
-      setSettings({
-        name: session.user.name || '',
-        reminder_time: data?.reminder_time || '21:00',
-        reminder_enabled: data?.reminder_enabled || false,
-        email_notifications: data?.email_notifications || false,
-        telegram_enabled: data?.telegram_enabled || false,
-        telegram_chat_id: data?.telegram_chat_id || ''
-      })
+      const response = await fetch('/api/user/preferences')
+      const result = await response.json()
+      
+      if (result.success) {
+        setSettings({
+          name: session.user.name || '',
+          email: session.user.email || '',
+          monthly_allowance: result.data.monthly_allowance || '',
+          monthly_budget_total: result.data.monthly_budget_total || '',
+          reminder_time: result.data.reminder_time || '21:00',
+          reminder_enabled: result.data.reminder_enabled || false,
+          email_notifications: result.data.email_notifications || false,
+          telegram_enabled: result.data.telegram_enabled || false,
+          telegram_chat_id: result.data.telegram_chat_id || ''
+        })
+      }
     } catch (error) {
       console.error('Error loading settings:', error)
       setMessage({ type: 'error', text: 'Failed to load settings' })
@@ -57,26 +61,32 @@ export default function SettingsPage() {
     setMessage({ type: '', text: '' })
 
     try {
-      const { error } = await supabase
-        .from('user_preferences')
-        .upsert({
-          user_id: session.user.id,
+      const response = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          monthly_allowance: settings.monthly_allowance ? parseFloat(settings.monthly_allowance) : 0,
+          monthly_budget_total: settings.monthly_budget_total ? parseFloat(settings.monthly_budget_total) : 0,
           reminder_time: settings.reminder_time,
           reminder_enabled: settings.reminder_enabled,
           email_notifications: settings.email_notifications,
-          telegram_enabled: settings.telegram_enabled,
-          updated_at: new Date().toISOString()
+          telegram_enabled: settings.telegram_enabled
         })
+      })
 
-      if (error) throw error
-
-      setMessage({ type: 'success', text: 'Settings saved successfully!' })
-      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+      const data = await response.json()
+      
+      if (data.success) {
+        setMessage({ type: 'success', text: 'Settings saved successfully!' })
+      } else {
+        throw new Error(data.error)
+      }
     } catch (error) {
       console.error('Error saving settings:', error)
       setMessage({ type: 'error', text: 'Error saving settings' })
     } finally {
       setLoading(false)
+      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
     }
   }
 
@@ -157,19 +167,48 @@ export default function SettingsPage() {
                 <input
                   type="text"
                   value={settings.name}
-                  onChange={(e) => setSettings({...settings, name: e.target.value})}
-                  className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  className="w-full p-2 border rounded bg-gray-50"
                   disabled
                 />
-                <p className="text-xs text-gray-500 mt-1">Name from Google account</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Email</label>
                 <input
                   type="email"
-                  value={session?.user?.email || ''}
+                  value={settings.email}
                   className="w-full p-2 border rounded bg-gray-50"
                   disabled
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Budget Settings */}
+          <div className="border-t pt-6">
+            <h2 className="text-lg font-semibold mb-4">💰 Budget Settings</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Monthly Allowance (Income)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={settings.monthly_allowance}
+                  onChange={(e) => setSettings({...settings, monthly_allowance: e.target.value})}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., 50000"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Overall Monthly Budget</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={settings.monthly_budget_total}
+                  onChange={(e) => setSettings({...settings, monthly_budget_total: e.target.value})}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., 30000"
                 />
               </div>
             </div>
@@ -226,32 +265,55 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Email Preferences Section */}
+          {/* Reminder Time */}
           <div className="border-t pt-6">
-            <h2 className="text-lg font-semibold mb-4">📧 Email Preferences</h2>
-            <div>
+            <h2 className="text-lg font-semibold mb-4">⏰ Daily Reminder</h2>
+            <div className="space-y-4">
               <label className="flex items-center">
                 <input
                   type="checkbox"
-                  checked={settings.email_notifications}
-                  onChange={(e) => setSettings({...settings, email_notifications: e.target.checked})}
+                  checked={settings.reminder_enabled}
+                  onChange={(e) => setSettings({...settings, reminder_enabled: e.target.checked})}
                   className="mr-2 rounded"
                 />
-                <span className="text-sm font-medium">Receive weekly summary via email</span>
+                <span className="text-sm font-medium">Enable daily reminders</span>
               </label>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">Reminder Time</label>
+                <input
+                  type="time"
+                  value={settings.reminder_time}
+                  onChange={(e) => setSettings({...settings, reminder_time: e.target.value})}
+                  className="w-full p-2 border rounded"
+                  disabled={!settings.reminder_enabled}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Save Button */}
-          <div className="pt-4">
-            <button
-              onClick={handleSave}
-              disabled={loading}
-              className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition disabled:bg-blue-300 font-medium"
-            >
-              {loading ? 'Saving...' : 'Save Settings'}
-            </button>
+          {/* Email Preferences */}
+          <div className="border-t pt-6">
+            <h2 className="text-lg font-semibold mb-4">📧 Email</h2>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={settings.email_notifications}
+                onChange={(e) => setSettings({...settings, email_notifications: e.target.checked})}
+                className="mr-2 rounded"
+              />
+              <span className="text-sm font-medium">Receive weekly summary</span>
+            </label>
           </div>
+
+          {/* Save Button */}
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition disabled:bg-blue-300 font-medium"
+          >
+            {loading ? 'Saving...' : 'Save Settings'}
+          </button>
         </div>
       </div>
     </>
