@@ -13,7 +13,15 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('budgets')
-    .select('*, categories(name, icon)')
+    .select(`
+      *,
+      categories (
+        id,
+        name,
+        icon,
+        color
+      )
+    `)
     .eq('user_id', userId)
     .eq('month', firstDayOfMonth)
 

@@ -5,16 +5,33 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import { getUserCategories } from '@/utils/categories'
+import { 
+  ArrowTrendingUpIcon as TrendingUpIcon, 
+  ArrowTrendingDownIcon as TrendingDownIcon,
+  CurrencyRupeeIcon,
+  ExclamationCircleIcon as ExclamationIcon,
+  CheckCircleIcon,
+  PencilIcon,
+  DocumentCheckIcon as SaveIcon,
+  XMarkIcon as XIcon
+} from '@heroicons/react/24/outline'
 
 export default function BudgetsPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const [categories, setCategories] = useState([])
   const [budgets, setBudgets] = useState([])
+  const [spending, setSpending] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
-  const [editingBudgets, setEditingBudgets] = useState({})
+  const [overallBudget, setOverallBudget] = useState(0)
+  const [editingOverall, setEditingOverall] = useState(false)
+  const [tempOverallBudget, setTempOverallBudget] = useState('')
+  const [categoryBudgets, setCategoryBudgets] = useState({})
+  const [editingCategory, setEditingCategory] = useState(null)
+  const [tempCategoryBudget, setTempCategoryBudget] = useState('')
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -22,7 +39,7 @@ export default function BudgetsPage() {
     } else if (session?.user?.id) {
       loadData()
     }
-  }, [session, status, router])
+  }, [session, status, router, selectedMonth])
 
   const loadData = async () => {
     setLoading(true)
@@ -31,29 +48,32 @@ export default function BudgetsPage() {
       const catResult = await getUserCategories(session.user.id)
       if (catResult.success) {
         setCategories(catResult.data)
-        
-        // Initialize editing budgets with empty values
-        const initialBudgets = {}
-        catResult.data.forEach(cat => {
-          initialBudgets[cat.id] = ''
-        })
-        setEditingBudgets(initialBudgets)
       }
 
-      // Load existing budgets for current month
-      const response = await fetch('/api/budgets')
-      const data = await response.json()
+      // Load user preferences (for overall budget)
+      const prefsResponse = await fetch('/api/user/preferences')
+      const prefsData = await prefsResponse.json()
+      if (prefsData.success) {
+        setOverallBudget(prefsData.data?.monthly_budget_total || 0)
+      }
+
+      // Load category budgets
+      const budgetsResponse = await fetch('/api/budgets')
+      const budgetsData = await budgetsResponse.json()
       
-      if (Array.isArray(data)) {
-        setBudgets(data)
+      if (Array.isArray(budgetsData)) {
+        setBudgets(budgetsData)
         
-        // Populate editing budgets with existing values
+        // Map category budgets
         const budgetMap = {}
-        data.forEach(budget => {
+        budgetsData.forEach(budget => {
           budgetMap[budget.category_id] = budget.monthly_limit
         })
-        setEditingBudgets(prev => ({ ...prev, ...budgetMap }))
+        setCategoryBudgets(budgetMap)
       }
+
+      // Load spending data
+      await loadSpendingData()
     } catch (error) {
       console.error('Error loading data:', error)
       setMessage({ type: 'error', text: 'Failed to load data' })
@@ -62,17 +82,65 @@ export default function BudgetsPage() {
     }
   }
 
-  const handleBudgetChange = (categoryId, value) => {
-    setEditingBudgets(prev => ({
-      ...prev,
-      [categoryId]: value
-    }))
+  const loadSpendingData = async () => {
+    try {
+      const [year, month] = selectedMonth.split('-')
+      const response = await fetch(`/api/expenses/monthly?year=${year}&month=${month}`)
+      const data = await response.json()
+      if (data.success) {
+        setSpending(data.spending || {})
+      }
+    } catch (error) {
+      console.error('Error loading spending:', error)
+      setSpending({})
+    }
   }
 
-  const handleSaveBudget = async (categoryId) => {
-    const limit = editingBudgets[categoryId]
-    if (!limit || isNaN(limit) || limit <= 0) {
+  const handleSaveOverallBudget = async () => {
+    if (!tempOverallBudget || isNaN(tempOverallBudget) || tempOverallBudget < 0) {
       setMessage({ type: 'error', text: 'Please enter a valid amount' })
+      return
+    }
+
+    setSaving(true)
+    try {
+      const response = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          monthly_budget_total: parseFloat(tempOverallBudget),
+          budget_month: selectedMonth + '-01'
+        })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        setOverallBudget(parseFloat(tempOverallBudget))
+        setEditingOverall(false)
+        setMessage({ type: 'success', text: 'Overall budget updated!' })
+      } else {
+        throw new Error(data.error)
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to update budget' })
+    } finally {
+      setSaving(false)
+      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+    }
+  }
+
+  const handleSaveCategoryBudget = async (categoryId) => {
+    if (!tempCategoryBudget || isNaN(tempCategoryBudget) || tempCategoryBudget < 0) {
+      setMessage({ type: 'error', text: 'Please enter a valid amount' })
+      return
+    }
+
+    // Check if category budget exceeds overall budget
+    const currentTotal = Object.values(categoryBudgets).reduce((sum, val) => sum + val, 0)
+    const newTotal = currentTotal - (categoryBudgets[categoryId] || 0) + parseFloat(tempCategoryBudget)
+    
+    if (overallBudget > 0 && newTotal > overallBudget) {
+      setMessage({ type: 'error', text: 'Category budgets cannot exceed overall budget' })
       return
     }
 
@@ -83,7 +151,7 @@ export default function BudgetsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           category_id: categoryId,
-          monthly_limit: parseFloat(limit)
+          monthly_limit: parseFloat(tempCategoryBudget)
         })
       })
 
@@ -91,7 +159,11 @@ export default function BudgetsPage() {
       
       const savedBudget = await response.json()
       
-      // Update budgets list
+      setCategoryBudgets(prev => ({
+        ...prev,
+        [categoryId]: parseFloat(tempCategoryBudget)
+      }))
+      
       setBudgets(prev => {
         const existing = prev.find(b => b.category_id === categoryId)
         if (existing) {
@@ -101,73 +173,39 @@ export default function BudgetsPage() {
         }
       })
 
-      setMessage({ type: 'success', text: 'Budget saved successfully!' })
-      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+      setEditingCategory(null)
+      setMessage({ type: 'success', text: 'Category budget saved!' })
     } catch (error) {
-      console.error('Error saving budget:', error)
       setMessage({ type: 'error', text: 'Failed to save budget' })
     } finally {
       setSaving(false)
+      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
     }
   }
 
-  const handleSaveAll = async () => {
-    setSaving(true)
-    let successCount = 0
-    let errorCount = 0
-
-    for (const category of categories) {
-      const limit = editingBudgets[category.id]
-      if (limit && !isNaN(limit) && limit > 0) {
-        try {
-          const response = await fetch('/api/budgets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              category_id: category.id,
-              monthly_limit: parseFloat(limit)
-            })
-          })
-          if (response.ok) {
-            successCount++
-            const savedBudget = await response.json()
-            setBudgets(prev => {
-              const existing = prev.find(b => b.category_id === category.id)
-              if (existing) {
-                return prev.map(b => b.category_id === category.id ? savedBudget : b)
-              } else {
-                return [...prev, savedBudget]
-              }
-            })
-          } else {
-            errorCount++
-          }
-        } catch {
-          errorCount++
-        }
-      }
+  const calculateTotals = () => {
+    const totalCategoryBudget = Object.values(categoryBudgets).reduce((sum, val) => sum + val, 0)
+    const totalSpent = Object.values(spending).reduce((sum, val) => sum + val, 0)
+    const remainingOverall = overallBudget - totalSpent
+    const remainingCategories = totalCategoryBudget - totalSpent
+    
+    return {
+      totalCategoryBudget,
+      totalSpent,
+      remainingOverall,
+      remainingCategories,
+      percentOverall: overallBudget > 0 ? (totalSpent / overallBudget) * 100 : 0,
+      percentCategories: totalCategoryBudget > 0 ? (totalSpent / totalCategoryBudget) * 100 : 0
     }
-
-    if (errorCount === 0) {
-      setMessage({ type: 'success', text: `All budgets saved successfully!` })
-    } else {
-      setMessage({ type: 'warning', text: `${successCount} saved, ${errorCount} failed` })
-    }
-    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
-    setSaving(false)
   }
 
-  // Calculate spending for each category (using insights data structure)
-  const getCategorySpending = (categoryId) => {
-    // This will be enhanced later when we connect to actual expense data
-    return 0
-  }
+  const totals = calculateTotals()
 
   if (status === 'loading' || loading) {
     return (
       <>
         <Navbar />
-        <div className="max-w-4xl mx-auto p-4 text-center">Loading...</div>
+        <div className="max-w-7xl mx-auto p-4 text-center">Loading...</div>
       </>
     )
   }
@@ -175,155 +213,261 @@ export default function BudgetsPage() {
   return (
     <>
       <Navbar />
-      <div className="max-w-4xl mx-auto p-4">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Monthly Budgets</h1>
-          <button
-            onClick={handleSaveAll}
-            disabled={saving}
-            className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition disabled:bg-blue-300"
-          >
-            {saving ? 'Saving...' : 'Save All Changes'}
-          </button>
+      <div className="max-w-7xl mx-auto p-4">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Budget Planning</h1>
+          
+          {/* Month Selector */}
+          <div className="flex items-center space-x-4 mb-6">
+            <label className="text-sm font-medium text-gray-700">Select Month:</label>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {message.text && (
+            <div className={`mb-4 p-3 rounded ${
+              message.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+            }`}>
+              {message.text}
+            </div>
+          )}
         </div>
 
-        {message.text && (
-          <div className={`p-3 mb-4 rounded ${
-            message.type === 'error' ? 'bg-red-100 text-red-700' : 
-            message.type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-            'bg-green-100 text-green-700'
-          }`}>
-            {message.text}
-          </div>
-        )}
-
-        <div className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="bg-gray-50 px-6 py-3 border-b">
-            <div className="grid grid-cols-12 gap-4 text-sm font-medium text-gray-600">
-              <div className="col-span-5">Category</div>
-              <div className="col-span-3">Monthly Budget (₹)</div>
-              <div className="col-span-2">Spent</div>
-              <div className="col-span-2">Remaining</div>
+        {/* Overall Budget Card */}
+        <div className="mb-8 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-6 text-white">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-xl font-semibold mb-1">Overall Monthly Budget</h2>
+                <p className="text-blue-100 text-sm">Total spending limit for all categories</p>
+              </div>
+              {!editingOverall ? (
+                <button
+                  onClick={() => {
+                    setTempOverallBudget(overallBudget.toString())
+                    setEditingOverall(true)
+                  }}
+                  className="p-2 hover:bg-white/20 rounded-full transition"
+                >
+                  <PencilIcon className="w-5 h-5" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setEditingOverall(false)}
+                  className="p-2 hover:bg-white/20 rounded-full transition"
+                >
+                  <XIcon className="w-5 h-5" />
+                </button>
+              )}
             </div>
+
+            {editingOverall ? (
+              <div className="flex items-center space-x-2">
+                <span className="text-2xl">₹</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={tempOverallBudget}
+                  onChange={(e) => setTempOverallBudget(e.target.value)}
+                  className="flex-1 px-4 py-2 text-gray-900 rounded-lg"
+                  placeholder="Enter total budget"
+                  autoFocus
+                />
+                <button
+                  onClick={handleSaveOverallBudget}
+                  disabled={saving}
+                  className="px-6 py-2 bg-white text-blue-600 rounded-lg font-medium hover:bg-blue-50 transition disabled:opacity-50"
+                >
+                  <SaveIcon className="w-5 h-5 inline mr-1" />
+                  Save
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-baseline space-x-2">
+                <span className="text-4xl font-bold">₹{overallBudget.toLocaleString()}</span>
+                {overallBudget === 0 && (
+                  <span className="text-sm text-blue-200">(Click pencil to set budget)</span>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="divide-y divide-gray-200">
-            {categories.map(category => {
-              const budget = budgets.find(b => b.category_id === category.id)
-              const currentBudget = editingBudgets[category.id] || ''
-              const spent = getCategorySpending(category.id)
-              const remaining = (parseFloat(currentBudget) || 0) - spent
-              const percentUsed = spent > 0 ? (spent / (parseFloat(currentBudget) || 1)) * 100 : 0
+          {/* Overall Progress Bar */}
+          {overallBudget > 0 && (
+            <div className="bg-white/10 px-6 py-4">
+              <div className="flex justify-between text-sm mb-1">
+                <span>Spent: ₹{totals.totalSpent.toLocaleString()}</span>
+                <span>Remaining: ₹{Math.max(0, totals.remainingOverall).toLocaleString()}</span>
+                <span>{totals.percentOverall.toFixed(1)}% used</span>
+              </div>
+              <div className="w-full bg-white/20 rounded-full h-3">
+                <div
+                  className={`h-3 rounded-full transition-all ${
+                    totals.percentOverall > 100 ? 'bg-red-400' :
+                    totals.percentOverall > 80 ? 'bg-yellow-400' : 'bg-green-400'
+                  }`}
+                  style={{ width: `${Math.min(totals.percentOverall, 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
 
-              return (
-                <div key={category.id} className="px-6 py-4 hover:bg-gray-50 transition">
-                  <div className="grid grid-cols-12 gap-4 items-center">
-                    {/* Category Info */}
-                    <div className="col-span-5 flex items-center space-x-3">
+        {/* Category Budgets Grid */}
+        <h2 className="text-xl font-semibold text-gray-800 mb-4">Category Budgets</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {categories.map(category => {
+            const categoryBudget = categoryBudgets[category.id] || 0
+            const spent = spending[category.id] || 0
+            const percentUsed = categoryBudget > 0 ? (spent / categoryBudget) * 100 : 0
+            const remaining = categoryBudget - spent
+            const isEditing = editingCategory === category.id
+
+            return (
+              <div key={category.id} className="bg-white rounded-xl shadow-sm hover:shadow-md transition">
+                <div className="p-5">
+                  {/* Category Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center space-x-3">
                       <div 
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-white"
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-2xl text-white"
                         style={{ backgroundColor: category.color || '#3B82F6' }}
                       >
-                        <span className="text-sm">{category.icon || '📝'}</span>
+                        {category.icon || '📝'}
                       </div>
                       <div>
-                        <h3 className="font-medium text-gray-900">{category.name}</h3>
-                        <p className="text-xs text-gray-500">{category.category_fields?.length || 0} fields</p>
+                        <h3 className="font-semibold text-lg">{category.name}</h3>
+                        <p className="text-sm text-gray-500">{category.category_fields?.length || 0} fields</p>
                       </div>
                     </div>
+                    {!isEditing ? (
+                      <button
+                        onClick={() => {
+                          setTempCategoryBudget(categoryBudget.toString())
+                          setEditingCategory(category.id)
+                        }}
+                        className="p-2 hover:bg-gray-100 rounded-full transition"
+                      >
+                        <PencilIcon className="w-4 h-4 text-gray-500" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setEditingCategory(null)}
+                        className="p-2 hover:bg-gray-100 rounded-full transition"
+                      >
+                        <XIcon className="w-4 h-4 text-red-500" />
+                      </button>
+                    )}
+                  </div>
 
-                    {/* Budget Input */}
-                    <div className="col-span-3">
+                  {/* Budget Input or Display */}
+                  {isEditing ? (
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Monthly Budget
+                      </label>
                       <div className="flex items-center space-x-2">
                         <span className="text-gray-500">₹</span>
                         <input
                           type="number"
                           min="0"
                           step="100"
-                          value={currentBudget}
-                          onChange={(e) => handleBudgetChange(category.id, e.target.value)}
-                          placeholder="0"
-                          className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                          value={tempCategoryBudget}
+                          onChange={(e) => setTempCategoryBudget(e.target.value)}
+                          className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                          autoFocus
                         />
                         <button
-                          onClick={() => handleSaveBudget(category.id)}
-                          disabled={saving || !editingBudgets[category.id]}
-                          className="px-3 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+                          onClick={() => handleSaveCategoryBudget(category.id)}
+                          disabled={saving}
+                          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-300"
                         >
                           Save
                         </button>
                       </div>
                     </div>
-
-                    {/* Spent */}
-                    <div className="col-span-2">
-                      <span className="font-medium text-gray-900">₹{spent.toFixed(0)}</span>
-                    </div>
-
-                    {/* Remaining with Progress Bar */}
-                    <div className="col-span-2">
-                      <div className="space-y-1">
-                        <span className={`font-medium ${
-                          remaining < 0 ? 'text-red-600' : 'text-green-600'
-                        }`}>
-                          {remaining < 0 ? '-' : ''}₹{Math.abs(remaining).toFixed(0)}
+                  ) : (
+                    <div className="mb-4">
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">Budget</span>
+                        <span className="font-semibold">
+                          ₹{categoryBudget > 0 ? categoryBudget.toLocaleString() : 'Not set'}
                         </span>
-                        {currentBudget > 0 && (
-                          <div className="w-full bg-gray-200 rounded-full h-1.5">
-                            <div
-                              className={`h-1.5 rounded-full ${
-                                percentUsed > 100 ? 'bg-red-500' : 
-                                percentUsed > 80 ? 'bg-yellow-500' : 'bg-green-500'
-                              }`}
-                              style={{ width: `${Math.min(percentUsed, 100)}%` }}
-                            />
-                          </div>
-                        )}
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Quick Stats Row */}
-                  {budget && (
-                    <div className="mt-2 text-xs text-gray-500 grid grid-cols-12 gap-4">
-                      <div className="col-span-5"></div>
-                      <div className="col-span-3">
-                        Current: ₹{budget.monthly_limit}
+                  {/* Progress Bar */}
+                  {categoryBudget > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Spent: ₹{spent.toLocaleString()}</span>
+                        <span className={remaining < 0 ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
+                          {remaining < 0 ? 'Overspent' : 'Left'}: ₹{Math.abs(remaining).toLocaleString()}
+                        </span>
                       </div>
-                      <div className="col-span-2">
-                        {percentUsed > 0 && `${Math.round(percentUsed)}% used`}
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all ${
+                            percentUsed > 100 ? 'bg-red-500' :
+                            percentUsed > 80 ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(percentUsed, 100)}%` }}
+                        />
                       </div>
-                      <div className="col-span-2"></div>
+                      <div className="text-xs text-gray-500 text-right">
+                        {percentUsed.toFixed(1)}% used
+                      </div>
                     </div>
                   )}
                 </div>
-              )
-            })}
-          </div>
-
-          {/* Summary Footer */}
-          <div className="bg-gray-50 px-6 py-4 border-t">
-            <div className="grid grid-cols-12 gap-4">
-              <div className="col-span-5 font-medium">Total Monthly Budget</div>
-              <div className="col-span-3 font-bold text-lg text-blue-600">
-                ₹{Object.values(editingBudgets).reduce((sum, val) => sum + (parseFloat(val) || 0), 0).toFixed(0)}
               </div>
-              <div className="col-span-2 text-gray-600">
-                {categories.length} categories
-              </div>
-              <div className="col-span-2"></div>
-            </div>
-          </div>
+            )
+          })}
         </div>
 
-        {/* Info Card */}
+        {/* Summary Section */}
+        <div className="mt-8 bg-gray-50 rounded-xl p-6">
+          <h3 className="text-lg font-semibold mb-4">Budget Summary</h3>
+          <div className="grid md:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <div className="text-sm text-gray-600 mb-1">Total Category Budgets</div>
+              <div className="text-2xl font-bold text-blue-600">₹{totals.totalCategoryBudget.toLocaleString()}</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <div className="text-sm text-gray-600 mb-1">Total Spent</div>
+              <div className="text-2xl font-bold text-orange-600">₹{totals.totalSpent.toLocaleString()}</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <div className="text-sm text-gray-600 mb-1">Remaining</div>
+              <div className="text-2xl font-bold text-green-600">₹{Math.max(0, totals.remainingOverall).toLocaleString()}</div>
+            </div>
+          </div>
+          
+          {/* Validation Warning */}
+          {overallBudget > 0 && totals.totalCategoryBudget > overallBudget && (
+            <div className="mt-4 p-3 bg-yellow-100 text-yellow-800 rounded-lg">
+              ⚠️ Your category budgets (₹{totals.totalCategoryBudget.toLocaleString()}) exceed your overall budget (₹{overallBudget.toLocaleString()}). 
+              Consider reducing category budgets to stay within your overall limit.
+            </div>
+          )}
+        </div>
+
+        {/* Tips Card */}
         <div className="mt-6 bg-blue-50 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-800 mb-2">💡 About Budgets</h3>
-          <p className="text-sm text-blue-700">
-            Set monthly budgets for each category to get personalized insights and alerts. 
-            Your Telegram bot will notify you when you're near or over budget, and provide 
-            investment recommendations based on your savings.
-          </p>
+          <h3 className="font-semibold text-blue-800 mb-2">💡 Budgeting Tips</h3>
+          <ul className="text-sm text-blue-700 space-y-1">
+            <li>• Set an overall budget first, then allocate to categories</li>
+            <li>• Category budgets should not exceed your overall budget</li>
+            <li>• Track your spending regularly to stay on target</li>
+            <li>• Adjust budgets monthly based on your actual needs</li>
+          </ul>
         </div>
       </div>
     </>
