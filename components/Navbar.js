@@ -48,6 +48,28 @@ export default function Navbar() {
               >
                 History
               </Link>
+
+              <Link
+                href="/budgets"
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  isActive('/budgets') 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'text-gray-700 hover:text-blue-600'
+                }`}
+              >
+                Budgets
+              </Link>
+              
+              <Link
+                href="/analytics"
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  isActive('/analytics') 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'text-gray-700 hover:text-blue-600'
+                }`}
+              >
+                Analytics
+              </Link>
               
               <Link
                 href="/settings"
@@ -59,17 +81,6 @@ export default function Navbar() {
               >
                 Settings
               </Link>
-
-<Link
-  href="/analytics"
-  className={`px-3 py-2 rounded-md text-sm font-medium ${
-    isActive('/analytics') 
-      ? 'bg-blue-100 text-blue-700' 
-      : 'text-gray-700 hover:text-blue-600'
-  }`}
->
-  Analytics
-</Link>
               
               <div className="border-l h-8 mx-2 border-gray-300"></div>
               
