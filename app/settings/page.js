@@ -4,6 +4,60 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
+import { EnvelopeIcon, CheckCircleIcon, BanknotesIcon } from '@heroicons/react/24/outline'
+
+// Bank options for Indian users
+const BANK_OPTIONS = [
+  // Banks
+  { code: 'hdfc', name: 'HDFC Bank', category: 'bank', patterns: ['HDFC Bank', 'HDFC', 'Your A/C'] },
+  { code: 'icici', name: 'ICICI Bank', category: 'bank', patterns: ['ICICI Bank', 'ICICI', 'ICICI Bank Alert'] },
+  { code: 'sbi', name: 'State Bank of India', category: 'bank', patterns: ['State Bank', 'SBI', 'SBI Alert'] },
+  { code: 'axis', name: 'Axis Bank', category: 'bank', patterns: ['Axis Bank', 'Axis'] },
+  { code: 'kotak', name: 'Kotak Mahindra', category: 'bank', patterns: ['Kotak', 'Kotak Mahindra'] },
+  { code: 'yes', name: 'Yes Bank', category: 'bank', patterns: ['Yes Bank', 'YES BANK'] },
+  { code: 'indusind', name: 'IndusInd Bank', category: 'bank', patterns: ['IndusInd Bank', 'IndusInd'] },
+  { code: 'pnb', name: 'Punjab National Bank', category: 'bank', patterns: ['PNB', 'Punjab National Bank'] },
+  { code: 'bob', name: 'Bank of Baroda', category: 'bank', patterns: ['Bank of Baroda', 'BOB'] },
+  { code: 'canara', name: 'Canara Bank', category: 'bank', patterns: ['Canara Bank'] },
+  
+  // Payment Apps
+  { code: 'phonepe', name: 'PhonePe', category: 'payment', patterns: ['PhonePe', 'phonepe'] },
+  { code: 'gpay', name: 'Google Pay', category: 'payment', patterns: ['Google Pay', 'gpay', 'tez'] },
+  { code: 'paytm', name: 'Paytm', category: 'payment', patterns: ['Paytm', 'paytm'] },
+  
+  // Food Delivery
+  { code: 'zomato', name: 'Zomato', category: 'food', patterns: ['Zomato', 'zomato order'] },
+  { code: 'swiggy', name: 'Swiggy', category: 'food', patterns: ['Swiggy', 'swiggy order'] },
+  
+  // Shopping
+  { code: 'amazon', name: 'Amazon', category: 'shopping', patterns: ['Amazon Pay', 'amazon.in'] },
+  { code: 'flipkart', name: 'Flipkart', category: 'shopping', patterns: ['Flipkart', 'flipkart order'] },
+  { code: 'myntra', name: 'Myntra', category: 'shopping', patterns: ['Myntra'] },
+  { code: 'ajio', name: 'Ajio', category: 'shopping', patterns: ['Ajio'] },
+  
+  // Utilities
+  { code: 'netflix', name: 'Netflix', category: 'entertainment', patterns: ['Netflix'] },
+  { code: 'spotify', name: 'Spotify', category: 'entertainment', patterns: ['Spotify'] },
+  { code: 'jio', name: 'Jio', category: 'telecom', patterns: ['Jio', 'jio fiber', 'jio postpaid'] },
+  { code: 'airtel', name: 'Airtel', category: 'telecom', patterns: ['Airtel', 'airtel payments'] },
+  
+  // Travel
+  { code: 'uber', name: 'Uber', category: 'travel', patterns: ['Uber', 'uber india'] },
+  { code: 'ola', name: 'Ola', category: 'travel', patterns: ['Ola', 'ola money'] },
+  { code: 'irctc', name: 'IRCTC', category: 'travel', patterns: ['IRCTC', 'irctc'] },
+  { code: 'makemytrip', name: 'MakeMyTrip', category: 'travel', patterns: ['MakeMyTrip', 'makemytrip'] },
+]
+
+// Group banks by category
+const groupedBanks = {
+  banks: BANK_OPTIONS.filter(b => b.category === 'bank'),
+  payment: BANK_OPTIONS.filter(b => b.category === 'payment'),
+  food: BANK_OPTIONS.filter(b => b.category === 'food'),
+  shopping: BANK_OPTIONS.filter(b => b.category === 'shopping'),
+  entertainment: BANK_OPTIONS.filter(b => b.category === 'entertainment'),
+  telecom: BANK_OPTIONS.filter(b => b.category === 'telecom'),
+  travel: BANK_OPTIONS.filter(b => b.category === 'travel'),
+}
 
 export default function SettingsPage() {
   const { data: session, status } = useSession()
@@ -12,6 +66,9 @@ export default function SettingsPage() {
   const [testMessageLoading, setTestMessageLoading] = useState(false)
   const [testPDFLoading, setTestPDFLoading] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [gmailConnected, setGmailConnected] = useState(false)
+  const [gmailLoading, setGmailLoading] = useState(false)
+  const [selectedBanks, setSelectedBanks] = useState([])
   const [settings, setSettings] = useState({
     name: '',
     email: '',
@@ -21,7 +78,9 @@ export default function SettingsPage() {
     reminder_enabled: false,
     email_notifications: false,
     telegram_enabled: false,
-    telegram_chat_id: ''
+    telegram_chat_id: '',
+    gmail_refresh_token: '',
+    email_scan_enabled: false
   })
 
   useEffect(() => {
@@ -47,8 +106,12 @@ export default function SettingsPage() {
           reminder_enabled: result.data.reminder_enabled || false,
           email_notifications: result.data.email_notifications || false,
           telegram_enabled: result.data.telegram_enabled || false,
-          telegram_chat_id: result.data.telegram_chat_id || ''
+          telegram_chat_id: result.data.telegram_chat_id || '',
+          gmail_refresh_token: result.data.gmail_refresh_token || '',
+          email_scan_enabled: result.data.email_scan_enabled || false
         })
+        setGmailConnected(!!result.data.gmail_refresh_token)
+        setSelectedBanks(result.data.selected_banks || ['hdfc', 'icici', 'sbi', 'axis', 'kotak', 'zomato', 'swiggy', 'amazon'])
       }
     } catch (error) {
       console.error('Error loading settings:', error)
@@ -70,7 +133,9 @@ export default function SettingsPage() {
           reminder_time: settings.reminder_time,
           reminder_enabled: settings.reminder_enabled,
           email_notifications: settings.email_notifications,
-          telegram_enabled: settings.telegram_enabled
+          telegram_enabled: settings.telegram_enabled,
+          email_scan_enabled: settings.email_scan_enabled,
+          selected_banks: selectedBanks
         })
       })
 
@@ -88,6 +153,66 @@ export default function SettingsPage() {
       setLoading(false)
       setTimeout(() => setMessage({ type: '', text: '' }), 3000)
     }
+  }
+
+  const handleGmailConnect = async () => {
+    setGmailLoading(true)
+    try {
+      const res = await fetch('/api/email/auth')
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        throw new Error('Failed to get auth URL')
+      }
+    } catch (error) {
+      console.error('Gmail connect error:', error)
+      setMessage({ type: 'error', text: 'Failed to connect Gmail' })
+      setGmailLoading(false)
+    }
+  }
+
+  const handleGmailDisconnect = async () => {
+    if (!confirm('Are you sure you want to disconnect Gmail?')) return
+    
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gmail_refresh_token: null,
+          email_scan_enabled: false
+        })
+      })
+      
+      if (res.ok) {
+        setGmailConnected(false)
+        setSettings({...settings, gmail_refresh_token: '', email_scan_enabled: false})
+        setMessage({ type: 'success', text: 'Gmail disconnected' })
+      }
+    } catch (error) {
+      console.error('Error disconnecting Gmail:', error)
+      setMessage({ type: 'error', text: 'Failed to disconnect' })
+    }
+  }
+
+  const toggleBank = (bankCode) => {
+    setSelectedBanks(prev => {
+      if (prev.includes(bankCode)) {
+        return prev.filter(c => c !== bankCode)
+      } else {
+        return [...prev, bankCode]
+      }
+    })
+  }
+
+  const selectAllBanks = () => {
+    const allBankCodes = BANK_OPTIONS.map(b => b.code)
+    setSelectedBanks(allBankCodes)
+  }
+
+  const clearAllBanks = () => {
+    setSelectedBanks([])
   }
 
   const handleTestTelegramMessage = async () => {
@@ -146,7 +271,7 @@ export default function SettingsPage() {
   return (
     <>
       <Navbar />
-      <div className="max-w-md mx-auto p-4">
+      <div className="max-w-2xl mx-auto p-4">
         <h1 className="text-2xl font-bold mb-6">Settings</h1>
 
         {message.text && (
@@ -180,6 +305,244 @@ export default function SettingsPage() {
                   disabled
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Email Scanning Section */}
+          <div className="border-t pt-6">
+            <h2 className="text-lg font-semibold mb-4 flex items-center">
+              <EnvelopeIcon className="w-5 h-5 mr-2 text-blue-500" />
+              Email Scanning
+            </h2>
+            <div className="bg-blue-50 p-4 rounded-lg mb-4">
+              <p className="text-sm text-blue-800">
+                Connect your Gmail to automatically detect expenses from bank emails, 
+                payment confirmations, and UPI transactions. Select which banks and services
+                to scan to save API quota and get faster results.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {gmailConnected ? (
+                <>
+                  <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                    <div className="flex items-center">
+                      <CheckCircleIcon className="w-5 h-5 text-green-500 mr-2" />
+                      <span className="text-sm text-green-700">Gmail connected</span>
+                    </div>
+                    <button
+                      onClick={handleGmailDisconnect}
+                      className="text-sm text-red-600 hover:text-red-800"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                  
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={settings.email_scan_enabled}
+                      onChange={(e) => setSettings({...settings, email_scan_enabled: e.target.checked})}
+                      className="mr-2 rounded"
+                    />
+                    <span className="text-sm font-medium">Enable automatic email scanning</span>
+                  </label>
+
+                  {/* Bank Selection */}
+                  <div className="mt-4 border rounded-lg p-4">
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="font-medium flex items-center">
+                        <BanknotesIcon className="w-4 h-4 mr-2 text-gray-600" />
+                        Select Banks & Services to Track
+                      </h3>
+                      <div className="space-x-2">
+                        <button
+                          onClick={selectAllBanks}
+                          className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          onClick={clearAllBanks}
+                          className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4 max-h-96 overflow-y-auto">
+                      {/* Banks */}
+                      {groupedBanks.banks.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">🏦 Banks</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {groupedBanks.banks.map(bank => (
+                              <label key={bank.code} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedBanks.includes(bank.code)}
+                                  onChange={() => toggleBank(bank.code)}
+                                  className="rounded"
+                                />
+                                <span className="text-sm">{bank.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Payment Apps */}
+                      {groupedBanks.payment.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">📱 Payment Apps</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {groupedBanks.payment.map(bank => (
+                              <label key={bank.code} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedBanks.includes(bank.code)}
+                                  onChange={() => toggleBank(bank.code)}
+                                  className="rounded"
+                                />
+                                <span className="text-sm">{bank.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Food Delivery */}
+                      {groupedBanks.food.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">🍔 Food Delivery</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {groupedBanks.food.map(bank => (
+                              <label key={bank.code} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedBanks.includes(bank.code)}
+                                  onChange={() => toggleBank(bank.code)}
+                                  className="rounded"
+                                />
+                                <span className="text-sm">{bank.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Shopping */}
+                      {groupedBanks.shopping.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">🛍️ Shopping</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {groupedBanks.shopping.map(bank => (
+                              <label key={bank.code} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedBanks.includes(bank.code)}
+                                  onChange={() => toggleBank(bank.code)}
+                                  className="rounded"
+                                />
+                                <span className="text-sm">{bank.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Entertainment */}
+                      {groupedBanks.entertainment.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">🎬 Entertainment</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {groupedBanks.entertainment.map(bank => (
+                              <label key={bank.code} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedBanks.includes(bank.code)}
+                                  onChange={() => toggleBank(bank.code)}
+                                  className="rounded"
+                                />
+                                <span className="text-sm">{bank.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Telecom */}
+                      {groupedBanks.telecom.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">📞 Telecom</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {groupedBanks.telecom.map(bank => (
+                              <label key={bank.code} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedBanks.includes(bank.code)}
+                                  onChange={() => toggleBank(bank.code)}
+                                  className="rounded"
+                                />
+                                <span className="text-sm">{bank.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Travel */}
+                      {groupedBanks.travel.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">✈️ Travel</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {groupedBanks.travel.map(bank => (
+                              <label key={bank.code} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedBanks.includes(bank.code)}
+                                  onChange={() => toggleBank(bank.code)}
+                                  className="rounded"
+                                />
+                                <span className="text-sm">{bank.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <p className="text-xs text-gray-500 mt-3">
+                      Selected {selectedBanks.length} of {BANK_OPTIONS.length} services
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      const res = await fetch('/api/email/scan', { method: 'POST' })
+                      const data = await res.json()
+                      if (data.success) {
+                        setMessage({ 
+                          type: 'success', 
+                          text: `Found ${data.found} new transactions!` 
+                        })
+                      }
+                    }}
+                    className="w-full bg-green-500 text-white py-2 rounded hover:bg-green-600 transition"
+                  >
+                    Scan Now
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleGmailConnect}
+                  disabled={gmailLoading}
+                  className="w-full bg-red-500 text-white py-2 rounded hover:bg-red-600 transition disabled:bg-red-300"
+                >
+                  {gmailLoading ? 'Connecting...' : 'Connect Gmail Account'}
+                </button>
+              )}
             </div>
           </div>
 

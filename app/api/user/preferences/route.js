@@ -32,7 +32,10 @@ export async function GET() {
         reminder_time: '21:00',
         reminder_enabled: false,
         email_notifications: false,
-        whatsapp_number: null
+        whatsapp_number: null,
+        gmail_refresh_token: null,
+        email_scan_enabled: false,
+        selected_banks: ['hdfc', 'icici', 'sbi', 'axis', 'kotak', 'zomato', 'swiggy', 'amazon']
       }
     })
   } catch (error) {
@@ -69,7 +72,8 @@ export async function PATCH(request) {
     const allowedFields = [
       'monthly_budget_total', 'budget_month', 'monthly_allowance',
       'telegram_enabled', 'telegram_chat_id', 'reminder_time',
-      'reminder_enabled', 'email_notifications', 'whatsapp_number'
+      'reminder_enabled', 'email_notifications', 'whatsapp_number',
+      'gmail_refresh_token', 'email_scan_enabled', 'selected_banks'
     ]
 
     allowedFields.forEach(field => {
