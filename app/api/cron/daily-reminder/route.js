@@ -5,8 +5,11 @@ import { getTodayExpenses } from '@/utils/expenses'
 import { sendTelegramDocument, sendTelegramMessage } from '@/utils/telegram'
 import { generateInsights } from '@/utils/insights'
 
+// Process users in batches to avoid overwhelming the system
+const BATCH_SIZE = 5
+const BATCH_DELAY = 2000 // 2 seconds between batches
+
 export async function GET(request) {
-  // Security: Check for secret key
   const authHeader = request.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
   
@@ -17,113 +20,51 @@ export async function GET(request) {
   try {
     console.log('⏰ Daily reminder cron job started')
     
-    // Get all users with Telegram enabled
-    const { data: users, error } = await supabaseAdmin
-      .from('user_preferences')
-      .select('user_id, telegram_chat_id, reminder_time')
-      .eq('telegram_enabled', true)
-      .not('telegram_chat_id', 'is', null)
-
-    if (error) throw error
-    
-    console.log(`👥 Found ${users?.length || 0} users with Telegram enabled`)
-
+    // Get users with reminders enabled, but only those whose reminder time is within the next hour
     const now = new Date()
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
     
+    // Get users who haven't been processed recently
+    const { data: users, error } = await supabaseAdmin
+      .from('user_preferences')
+      .select('user_id, telegram_chat_id, reminder_time, last_reminder_sent')
+      .eq('telegram_enabled', true)
+      .not('telegram_chat_id', 'is', null)
+      .eq('reminder_time', currentTime)
+      .or(`last_reminder_sent.is.null,last_reminder_sent.lt.${new Date(Date.now() - 12*60*60*1000).toISOString()}`) // Not sent in last 12 hours
+
+    if (error) throw error
+    
+    console.log(`👥 Found ${users?.length || 0} users to process`)
+    
     const results = []
-
-    // Process each user
-    for (const user of users || []) {
-      try {
-        // Check if it's time to send (if reminder_time is set)
-        if (user.reminder_time && user.reminder_time !== currentTime) {
-          continue // Skip if not the right time
-        }
-
-        console.log(`📊 Processing user ${user.user_id}`)
-
-        // Get today's expenses
-        const { data: expenses, success: expSuccess } = await getTodayExpenses(user.user_id)
-        
-        if (!expSuccess || !expenses?.length) {
-          // Send gentle reminder to add expenses
-          await sendTelegramMessage(
-            user.telegram_chat_id,
-            '📝 *No expenses recorded today*\n\nDon\'t forget to add your daily expenses to get insights and maintain your tracking streak!'
-          )
-          results.push({ userId: user.user_id, status: 'reminder_sent' })
-          continue
-        }
-
-        // Get categories for PDF generation
-        const { data: categories, error: catError } = await supabaseAdmin
-          .from('categories')
-          .select('*')
-          .eq('user_id', user.user_id)
-
-        if (catError || !categories) {
-          console.error(`❌ Error fetching categories for user ${user.user_id}:`, catError)
-          results.push({ userId: user.user_id, status: 'error', error: 'Failed to fetch categories' })
-          continue
-        }
-
-        // Generate PDF
-        const today = new Date().toISOString().split('T')[0]
-        const pdfBuffer = await generatePDF(expenses, categories, today)
-
-        // Upload to Supabase storage
-        const fileName = `expenses-${user.user_id}-${today}.pdf`
-        const { error: uploadError } = await supabaseAdmin.storage
-          .from('pdf-reports')
-          .upload(fileName, pdfBuffer, { 
-            contentType: 'application/pdf', 
-            upsert: true 
-          })
-
-        if (uploadError) {
-          console.error(`❌ Upload error for user ${user.user_id}:`, uploadError)
-          results.push({ userId: user.user_id, status: 'error', error: 'Failed to upload PDF' })
-          continue
-        }
-
-        const { data: { publicUrl } } = supabaseAdmin.storage
-          .from('pdf-reports')
-          .getPublicUrl(fileName)
-
-        // Send PDF via Telegram
-        const pdfResult = await sendTelegramDocument(
-          user.telegram_chat_id,
-          publicUrl,
-          `Expense-Report-${today}.pdf`
-        )
-
-        if (!pdfResult.success) {
-          console.error(`❌ Failed to send PDF to user ${user.user_id}:`, pdfResult.error)
-          results.push({ userId: user.user_id, status: 'error', error: 'Failed to send PDF' })
-          continue
-        }
-
-        // Generate and send insights
-        const { insights, saved } = await generateInsights(user.user_id, supabaseAdmin)
-        
-        if (insights?.length) {
-          const insightsMessage = '📊 *Daily Insights*\n\n' + insights.map(i => `• ${i}`).join('\n\n')
-          await sendTelegramMessage(user.telegram_chat_id, insightsMessage)
-        }
-
-        results.push({ userId: user.user_id, status: 'success' })
-        console.log(`✅ Success for user ${user.user_id}`)
-
-      } catch (userError) {
-        console.error(`❌ Error processing user ${user.user_id}:`, userError)
-        results.push({ 
-          userId: user.user_id, 
-          status: 'error', 
-          error: userError.message || 'Unknown error' 
-        })
+    
+    // Process in batches
+    for (let i = 0; i < (users?.length || 0); i += BATCH_SIZE) {
+      const batch = users.slice(i, i + BATCH_SIZE)
+      
+      // Process batch concurrently
+      const batchResults = await Promise.allSettled(
+        batch.map(user => processUserReminder(user))
+      )
+      
+      results.push(...batchResults.map((r, idx) => ({
+        userId: batch[idx].user_id,
+        status: r.status === 'fulfilled' ? r.value : 'error',
+        error: r.status === 'rejected' ? r.reason?.message : null
+      })))
+      
+      // Delay between batches
+      if (i + BATCH_SIZE < users.length) {
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY))
       }
     }
+    
+    // Update last reminder sent for successful users
+    await supabaseAdmin
+      .from('user_preferences')
+      .update({ last_reminder_sent: new Date().toISOString() })
+      .in('user_id', results.filter(r => r.status === 'success').map(r => r.userId))
 
     return NextResponse.json({ 
       success: true, 
@@ -134,5 +75,62 @@ export async function GET(request) {
   } catch (error) {
     console.error('❌ Cron job error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+async function processUserReminder(user) {
+  try {
+    console.log(`📊 Processing user ${user.user_id}`)
+
+    // Get today's expenses
+    const { data: expenses } = await getTodayExpenses(user.user_id)
+    
+    if (!expenses?.length) {
+      await sendTelegramMessage(
+        user.telegram_chat_id,
+        '📝 *No expenses recorded today*\n\nDon\'t forget to add your daily expenses!'
+      )
+      return 'reminder_sent'
+    }
+
+    // Get categories
+    const { data: categories } = await supabaseAdmin
+      .from('categories')
+      .select('*')
+      .eq('user_id', user.user_id)
+
+    // Generate PDF
+    const today = new Date().toISOString().split('T')[0]
+    const pdfBuffer = await generatePDF(expenses, categories, today)
+
+    // Upload to storage
+    const fileName = `expenses-${user.user_id}-${today}.pdf`
+    await supabaseAdmin.storage
+      .from('pdf-reports')
+      .upload(fileName, pdfBuffer, { upsert: true })
+
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('pdf-reports')
+      .getPublicUrl(fileName)
+
+    // Send PDF
+    await sendTelegramDocument(
+      user.telegram_chat_id,
+      publicUrl,
+      `Expense-Report-${today}.pdf`
+    )
+
+    // Generate insights
+    const { insights } = await generateInsights(user.user_id, supabaseAdmin)
+    
+    if (insights?.length) {
+      const insightsMessage = '📊 *Daily Insights*\n\n' + insights.map(i => `• ${i}`).join('\n\n')
+      await sendTelegramMessage(user.telegram_chat_id, insightsMessage)
+    }
+
+    return 'success'
+  } catch (error) {
+    console.error(`❌ Error processing user ${user.user_id}:`, error)
+    throw error
   }
 }

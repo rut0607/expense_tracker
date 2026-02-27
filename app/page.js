@@ -12,7 +12,7 @@ import SplitSummary from '@/components/splits/SplitSummary'
 import { getUserCategories } from '@/utils/categories'
 import { getTodayExpenses, saveExpense, deleteExpense } from '@/utils/expenses'
 import PDFButton from '@/components/pdf/PDFButton'
-import { EnvelopeIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { EnvelopeIcon } from '@heroicons/react/24/outline'
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
@@ -25,13 +25,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
-  const [showSplitModal, setShowSplitModal] = useState(false)
-  const [selectedTransaction, setSelectedTransaction] = useState(null)
-  const [splitDetails, setSplitDetails] = useState({ 
-    myShare: 0, 
-    groupId: '',
-    friends: []
-  })
   const [groups, setGroups] = useState([])
 
   useEffect(() => {
@@ -129,14 +122,10 @@ export default function DashboardPage() {
   }
 
   const handlePendingTransaction = async (transaction) => {
-    if (transaction.action === 'add') {
-      // Find appropriate category
-      const category = categories.find(c => 
-        c.name.toLowerCase().includes(transaction.category?.toLowerCase())
-      ) || categories[0]
-
+    if (transaction.action === 'add' && transaction.categoryId) {
+      // Add expense with selected category
       await handleAddExpense({
-        category_id: category?.id,
+        category_id: transaction.categoryId,
         amount: transaction.amount,
         description: transaction.description || transaction.merchant,
         fields: {},
@@ -151,6 +140,7 @@ export default function DashboardPage() {
       })
 
       setPendingTransactions(prev => prev.filter(t => t.id !== transaction.id))
+      showMessage('success', `Added to ${transaction.categoryName || 'expenses'}`)
     
     } else if (transaction.action === 'ignore') {
       await fetch('/api/email/pending', {
@@ -159,62 +149,44 @@ export default function DashboardPage() {
         body: JSON.stringify({ id: transaction.id })
       })
       setPendingTransactions(prev => prev.filter(t => t.id !== transaction.id))
+      showMessage('info', 'Transaction ignored')
     
     } else if (transaction.action === 'split') {
-      setSelectedTransaction(transaction)
-      setSplitDetails({
-        ...splitDetails,
-        myShare: Math.round(transaction.amount / 2) // Default to equal split with 1 friend
-      })
-      setShowSplitModal(true)
-    }
-  }
-
-  const handleSplitConfirm = async () => {
-    if (!splitDetails.groupId && splitDetails.friends.length === 0) {
-      alert('Please select a group or add friends')
-      return
-    }
-
-    const myShare = parseFloat(splitDetails.myShare)
-    if (isNaN(myShare) || myShare <= 0 || myShare >= selectedTransaction.amount) {
-      alert('Please enter a valid share amount')
-      return
-    }
-
-    try {
-      const res = await fetch('/api/splits/expenses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transactionId: selectedTransaction.id,
-          totalAmount: selectedTransaction.amount,
-          myShare: myShare,
-          groupId: splitDetails.groupId,
-          friends: splitDetails.friends,
-          description: selectedTransaction.description || selectedTransaction.merchant,
-          merchant: selectedTransaction.merchant
-        })
-      })
-
-      const data = await res.json()
-      if (data.success) {
-        showMessage('success', 'Split expense created!')
-        setShowSplitModal(false)
-        setSelectedTransaction(null)
-        loadSplitSummary()
-        
-        // Remove from pending
-        await fetch('/api/email/pending', {
-          method: 'DELETE',
+      try {
+        const res = await fetch('/api/splits/expenses', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: selectedTransaction.id })
+          body: JSON.stringify({
+            transactionId: transaction.id,
+            totalAmount: transaction.amount,
+            myShare: transaction.splitDetails.myShare,
+            groupId: transaction.splitDetails.groupId,
+            friends: transaction.splitDetails.friends,
+            description: transaction.description || transaction.merchant,
+            merchant: transaction.merchant
+          })
         })
-        setPendingTransactions(prev => prev.filter(t => t.id !== selectedTransaction.id))
+
+        const data = await res.json()
+        if (data.success) {
+          showMessage('success', 'Split expense created!')
+          
+          // Remove from pending
+          await fetch('/api/email/pending', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: transaction.id })
+          })
+          
+          setPendingTransactions(prev => prev.filter(t => t.id !== transaction.id))
+          loadSplitSummary() // Refresh split summary
+        } else {
+          showMessage('error', data.error || 'Failed to create split')
+        }
+      } catch (error) {
+        console.error('Error creating split:', error)
+        showMessage('error', 'Failed to create split')
       }
-    } catch (error) {
-      console.error('Error creating split:', error)
-      showMessage('error', 'Failed to create split')
     }
   }
 
@@ -229,6 +201,8 @@ export default function DashboardPage() {
         } else {
           showMessage('success', 'No new transactions found')
         }
+      } else {
+        showMessage('error', data.error || 'Failed to scan emails')
       }
     } catch (error) {
       console.error('Error scanning emails:', error)
@@ -308,18 +282,21 @@ export default function DashboardPage() {
         {/* Message */}
         {message.text && (
           <div className={`p-3 mb-4 rounded ${
-            message.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+            message.type === 'error' ? 'bg-red-100 text-red-700' : 
+            message.type === 'info' ? 'bg-blue-100 text-blue-700' :
+            'bg-green-100 text-green-700'
           }`}>
             {message.text}
           </div>
         )}
 
-        {/* Pending Transactions */}
+        {/* Pending Transactions - Now with user categories */}
         {pendingTransactions.length > 0 && (
           <PendingTransactions 
             transactions={pendingTransactions}
             onProcess={handlePendingTransaction}
             groups={groups}
+            userCategories={categories} // Pass user's custom categories
           />
         )}
 
@@ -365,80 +342,6 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
-
-      {/* Split Modal */}
-      {showSplitModal && selectedTransaction && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4">Split Expense</h3>
-            
-            <div className="mb-4 p-3 bg-gray-50 rounded">
-              <p className="font-medium">{selectedTransaction.merchant}</p>
-              <p className="text-sm text-gray-600">{selectedTransaction.description}</p>
-              <p className="text-lg font-bold text-blue-600 mt-1">
-                ₹{selectedTransaction.amount}
-              </p>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">
-                Your Share (₹)
-              </label>
-              <input
-                type="number"
-                value={splitDetails.myShare}
-                onChange={(e) => setSplitDetails({
-                  ...splitDetails, 
-                  myShare: e.target.value
-                })}
-                className="w-full p-2 border rounded"
-                placeholder="Enter your portion"
-                min="1"
-                max={selectedTransaction.amount - 1}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Friends will owe: ₹{selectedTransaction.amount - (splitDetails.myShare || 0)}
-              </p>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">
-                Split with Group
-              </label>
-              <select
-                value={splitDetails.groupId}
-                onChange={(e) => setSplitDetails({
-                  ...splitDetails, 
-                  groupId: e.target.value
-                })}
-                className="w-full p-2 border rounded"
-              >
-                <option value="">Select a group</option>
-                {groups.map(group => (
-                  <option key={group.id} value={group.id}>
-                    {group.name} ({group.group_members?.length || 0} members)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => setShowSplitModal(false)}
-                className="px-4 py-2 border rounded hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSplitConfirm}
-                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-              >
-                Create Split
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

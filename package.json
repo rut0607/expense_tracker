@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@dubdubdublabs/gmailer": "^1.2.0",
     "@google/generative-ai": "^0.24.1",
     "@googleapis/gmail": "^16.1.1",
     "@heroicons/react": "^2.2.0",
@@ -16,7 +17,8 @@
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.1.0",
     "googleapis": "^171.4.0",
-    "jspdf": "^4.1.0",
+    "ioredis": "^5.9.3",
+    "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
     "next": "16.1.6",
     "next-auth": "^4.24.13",
