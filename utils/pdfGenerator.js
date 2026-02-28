@@ -1,18 +1,13 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export async function generatePDF(expenses, categories, date) {
+export async function generatePDF(expenses, date) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new jsPDF();
 
-      // ---------- Helper Functions ----------
-      const formatINR = (amount) =>
-        Number(amount || 0).toLocaleString("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-
+      // Simple amount formatting
+      const formatAmount = (amount) => `Rs. ${Number(amount || 0).toFixed(2)}`;
       const formattedDate = new Date(date).toLocaleDateString("en-IN", {
         day: "numeric",
         month: "long",
@@ -21,175 +16,118 @@ export async function generatePDF(expenses, categories, date) {
 
       // ========== HEADER ==========
       doc.setFillColor(41, 128, 185);
-      doc.rect(0, 0, 210, 35, "F");
+      doc.rect(0, 0, 210, 30, "F");
 
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(24);
+      doc.setFontSize(22);
       doc.setFont("helvetica", "bold");
       doc.text("DAILY EXPENSE REPORT", 105, 18, { align: "center" });
 
-      doc.setFontSize(10);
+      // ========== DATE ==========
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
       doc.setFont("helvetica", "normal");
-      doc.text("Generated via Expense Tracker App", 105, 25, { align: "center" });
+      doc.text(`Date: ${formattedDate}`, 14, 45);
 
-      // ========== METADATA ==========
-      doc.setTextColor(40, 40, 40);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("REPORT DATE:", 14, 48);
-      doc.setFont("helvetica", "normal");
-      doc.text(`${formattedDate}`, 45, 48);
+      let yPos = 55;
+      let grandTotal = 0;
 
-      // Group expenses by category
-      const groupedExpenses = expenses.reduce((groups, expense) => {
-        const categoryId = expense.categories?.id || expense.category_id || 'other';
-        const categoryName = expense.categories?.name || expense.category_name || 'Other';
-        const categoryIcon = expense.categories?.icon || '📝';
-
-        if (!groups[categoryId]) {
-          groups[categoryId] = {
-            name: categoryName,
-            icon: categoryIcon,
+      // ========== GROUP EXPENSES BY CATEGORY ==========
+      const groupedExpenses = {};
+      
+      expenses.forEach(expense => {
+        const categoryName = expense.categories?.name || 'Other';
+        if (!groupedExpenses[categoryName]) {
+          groupedExpenses[categoryName] = {
             items: [],
             total: 0
           };
         }
+        groupedExpenses[categoryName].items.push(expense);
+        groupedExpenses[categoryName].total += Number(expense.amount) || 0;
+        grandTotal += Number(expense.amount) || 0;
+      });
 
-        groups[categoryId].items.push(expense);
-        groups[categoryId].total += Number(expense.amount) || 0;
-        return groups;
-      }, {});
-
-      let yPos = 60;
-      let grandTotal = 0;
-      let sectionCounter = 1;
-
-      // ========== DYNAMIC CATEGORY SECTIONS ==========
-      Object.values(groupedExpenses).forEach((category) => {
+      // ========== EXPENSE TABLES BY CATEGORY ==========
+      let categoryIndex = 1;
+      
+      for (const [categoryName, categoryData] of Object.entries(groupedExpenses)) {
         // Category Header
-        doc.setFontSize(13);
+        doc.setFontSize(14);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(41, 128, 185);
-        doc.text(`${sectionCounter}. ${category.icon} ${category.name.toUpperCase()}`, 14, yPos);
+        doc.text(`${categoryIndex}. ${categoryName}`, 14, yPos);
+        yPos += 5;
 
-        // Prepare table data for this category
-        const tableData = category.items.map(item => {
-          let fieldsStr = '';
-          if (item.fields && Object.keys(item.fields).length > 0) {
-            fieldsStr = Object.entries(item.fields)
-              .map(([key, val]) => `${key}: ${val}`)
-              .join(' | ');
-          }
-          return [
-            item.description || '-',
-            `Rs. ${formatINR(item.amount)}`,
-            fieldsStr
-          ];
-        });
+        // Prepare table data
+        const tableData = categoryData.items.map(item => [
+          item.description || item.merchant || 'Transaction',
+          formatAmount(item.amount)
+        ]);
 
         // Add table for this category
         autoTable(doc, {
-          startY: yPos + 5,
-          head: [['Description', 'Amount', 'Details']],
+          startY: yPos,
+          head: [['Description', 'Amount']],
           body: tableData,
-          foot: [[`${category.name} Total`, `Rs. ${formatINR(category.total)}`, '']],
-          theme: "striped",
+          foot: [[`${categoryName} Total`, formatAmount(categoryData.total)]],
+          theme: 'striped',
           headStyles: { fillColor: [41, 128, 185], textColor: 255 },
           footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
           columnStyles: {
-            1: { halign: "right" },
-            2: { cellWidth: 70 }
+            0: { cellWidth: 130 },
+            1: { cellWidth: 40, halign: 'right' }
           },
           margin: { left: 14, right: 14 },
         });
 
-        yPos = doc.lastAutoTable.finalY + 15;
-        grandTotal += category.total;
-        sectionCounter++;
-      });
+        yPos = doc.lastAutoTable.finalY + 10;
+        categoryIndex++;
+      }
 
-      // ========== GRAND TOTAL SECTION ==========
+      // ========== GRAND TOTAL ==========
       const pageHeight = doc.internal.pageSize.height;
-      if (yPos > pageHeight - 40) {
+      
+      if (yPos > pageHeight - 30) {
         doc.addPage();
         yPos = 20;
       }
 
       // Draw a light grey background box for the total
       doc.setFillColor(245, 245, 245);
-      doc.rect(14, yPos, 182, 20, "F");
-
-      // Draw a thick left border for accent
-      doc.setFillColor(41, 128, 185);
-      doc.rect(14, yPos, 2, 20, "F");
+      doc.rect(14, yPos, 182, 15, "F");
 
       // Grand Total Label
       doc.setTextColor(60, 60, 60);
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("GRAND TOTAL", 22, yPos + 12);
+      doc.text("GRAND TOTAL", 22, yPos + 10);
 
       // Grand Total Amount
       doc.setTextColor(41, 128, 185);
       doc.setFontSize(16);
-      doc.text(`Rs. ${formatINR(grandTotal)}`, 190, yPos + 12, { align: "right" });
-
-      // ========== CATEGORY SUMMARY TABLE ==========
-      yPos += 30;
-      if (yPos > pageHeight - 40) {
-        doc.addPage();
-        yPos = 20;
-      }
-
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(41, 128, 185);
-      doc.text("CATEGORY SUMMARY", 14, yPos);
-
-      const summaryData = Object.values(groupedExpenses).map(cat => [
-        `${cat.icon} ${cat.name}`,
-        `Rs. ${formatINR(cat.total)}`,
-        `${cat.items.length} ${cat.items.length === 1 ? 'entry' : 'entries'}`
-      ]);
-
-      autoTable(doc, {
-        startY: yPos + 5,
-        head: [['Category', 'Total', 'Items']],
-        body: summaryData,
-        theme: "grid",
-        headStyles: { fillColor: [41, 128, 185], textColor: 255 },
-        columnStyles: {
-          1: { halign: "right" },
-          2: { halign: "center" }
-        },
-        margin: { left: 14, right: 14 },
-      });
-
-      yPos = doc.lastAutoTable.finalY + 15;
+      doc.text(formatAmount(grandTotal), 190, yPos + 10, { align: "right" });
 
       // ========== FOOTER ==========
-      doc.setTextColor(150);
+      const footerY = doc.internal.pageSize.height - 10;
+      doc.setTextColor(150, 150, 150);
       doc.setFontSize(9);
       doc.setFont("helvetica", "italic");
       doc.text(
         "This is a computer-generated report.",
         105,
-        pageHeight - 15,
-        { align: "center" }
-      );
-      doc.text(
-        `Timestamp: ${new Date().toLocaleString()}`,
-        105,
-        pageHeight - 10,
+        footerY,
         { align: "center" }
       );
 
-      // Instead of saving, get the PDF as a buffer
+      // ========== SAVE PDF ==========
       const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+      doc.save(`Expense-Report-${new Date().toISOString().split('T')[0]}.pdf`);
       resolve(pdfBuffer);
+
     } catch (error) {
+      console.error('PDF Generation Error:', error);
       reject(error);
     }
   });
 }
-

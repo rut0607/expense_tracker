@@ -33,6 +33,7 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // Always return an array, even if empty
     return NextResponse.json(data || [])
   } catch (error) {
     console.error('Error in GET /api/budgets:', error)

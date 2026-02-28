@@ -15,20 +15,27 @@ export async function GET(request) {
     const month = searchParams.get('month')
 
     if (!year || !month) {
-      return NextResponse.json({ error: 'Year and month required' }, { status: 400 })
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Year and month required' 
+      }, { status: 400 })
     }
 
-    // Validate year and month format
+    // Validate year and month
     const yearNum = parseInt(year)
     const monthNum = parseInt(month)
     if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-      return NextResponse.json({ error: 'Invalid year or month format' }, { status: 400 })
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid year or month format' 
+      }, { status: 400 })
     }
 
     // Calculate first and last day of the month
-    const firstDay = new Date(yearNum, monthNum - 1, 1).toISOString()
-    const lastDay = new Date(yearNum, monthNum, 0).toISOString()
+    const firstDay = new Date(yearNum, monthNum - 1, 1).toISOString().split('T')[0]
+    const lastDay = new Date(yearNum, monthNum, 0).toISOString().split('T')[0]
 
+    // Fetch expenses for the specified month
     const { data: expenses, error } = await supabase
       .from('expenses')
       .select(`
@@ -47,10 +54,13 @@ export async function GET(request) {
 
     if (error) {
       console.error('Error fetching expenses:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ 
+        success: false, 
+        error: error.message 
+      }, { status: 500 })
     }
 
-    // Group spending by category with details
+    // Group spending by category
     const spendingMap = {}
     const categoryDetails = {}
     
@@ -69,8 +79,12 @@ export async function GET(request) {
       categories: categoryDetails,
       count: expenses?.length || 0
     })
+
   } catch (error) {
     console.error('Monthly expenses API error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message 
+    }, { status: 500 })
   }
 }
