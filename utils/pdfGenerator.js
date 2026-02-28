@@ -192,3 +192,4 @@ export async function generatePDF(expenses, categories, date) {
     }
   });
 }
+
