@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export async function generatePDF(expenses, date) {
+export async function generatePDF(expenses, categories, date) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new jsPDF();

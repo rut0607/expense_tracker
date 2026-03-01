@@ -20,7 +20,6 @@ export async function GET(request) {
   try {
     console.log('⏰ Daily reminder cron job started')
     
-    // Get users with reminders enabled, but only those whose reminder time is within the next hour
     const now = new Date()
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
     
@@ -31,7 +30,7 @@ export async function GET(request) {
       .eq('telegram_enabled', true)
       .not('telegram_chat_id', 'is', null)
       .eq('reminder_time', currentTime)
-      .or(`last_reminder_sent.is.null,last_reminder_sent.lt.${new Date(Date.now() - 12*60*60*1000).toISOString()}`) // Not sent in last 12 hours
+      .or(`last_reminder_sent.is.null,last_reminder_sent.lt.${new Date(Date.now() - 12*60*60*1000).toISOString()}`)
 
     if (error) throw error
     
@@ -43,7 +42,6 @@ export async function GET(request) {
     for (let i = 0; i < (users?.length || 0); i += BATCH_SIZE) {
       const batch = users.slice(i, i + BATCH_SIZE)
       
-      // Process batch concurrently
       const batchResults = await Promise.allSettled(
         batch.map(user => processUserReminder(user))
       )
@@ -54,7 +52,6 @@ export async function GET(request) {
         error: r.status === 'rejected' ? r.reason?.message : null
       })))
       
-      // Delay between batches
       if (i + BATCH_SIZE < users.length) {
         await new Promise(resolve => setTimeout(resolve, BATCH_DELAY))
       }
@@ -113,6 +110,9 @@ async function processUserReminder(user) {
       .from('pdf-reports')
       .getPublicUrl(fileName)
 
+    // Generate insights FIRST (so we can decide what to send)
+    const { insights } = await generateInsights(user.user_id, supabaseAdmin)
+    
     // Send PDF
     await sendTelegramDocument(
       user.telegram_chat_id,
@@ -120,11 +120,26 @@ async function processUserReminder(user) {
       `Expense-Report-${today}.pdf`
     )
 
-    // Generate insights
-    const { insights } = await generateInsights(user.user_id, supabaseAdmin)
-    
-    if (insights?.length) {
-      const insightsMessage = '📊 *Daily Insights*\n\n' + insights.map(i => `• ${i}`).join('\n\n')
+    // Send insights if available
+    if (insights?.length && insights[0] !== 'Unable to generate insights at this time.') {
+      // Format insights nicely
+      let insightsMessage = '📊 *Daily Insights*\n\n'
+      
+      // Separate budget alerts from investment insights
+      const budgetAlerts = insights.filter(i => i.includes('OVERSHOOT') || i.includes('Near Limit'))
+      const investmentInsights = insights.filter(i => !i.includes('OVERSHOOT') && !i.includes('Near Limit'))
+      
+      if (budgetAlerts.length > 0) {
+        insightsMessage += '*Budget Alerts:*\n'
+        insightsMessage += budgetAlerts.map(i => `• ${i}`).join('\n')
+        insightsMessage += '\n\n'
+      }
+      
+      if (investmentInsights.length > 0) {
+        insightsMessage += '*Investment Tips:*\n'
+        insightsMessage += investmentInsights.map(i => `• ${i}`).join('\n')
+      }
+      
       await sendTelegramMessage(user.telegram_chat_id, insightsMessage)
     }
 
