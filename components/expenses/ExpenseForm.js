@@ -17,7 +17,7 @@ export default function ExpenseForm({ categories, onSave }) {
     if (!selectedCategoryData) return
 
     let total = 0
-    
+
     switch (selectedCategoryData.calculation_type) {
       case 'sum':
         // Sum all number fields
@@ -26,7 +26,7 @@ export default function ExpenseForm({ categories, onSave }) {
           return sum + numValue
         }, 0)
         break
-        
+
       case 'product':
         // Multiply all number fields
         total = Object.entries(fieldValues).reduce((product, [key, value]) => {
@@ -34,11 +34,11 @@ export default function ExpenseForm({ categories, onSave }) {
           return product * numValue
         }, 1)
         break
-        
+
       default:
         total = 0
     }
-    
+
     setCalculatedTotal(total)
   }, [fieldValues, selectedCategoryData])
 
@@ -51,7 +51,7 @@ export default function ExpenseForm({ categories, onSave }) {
         return
       }
     }
-    
+
     setError('')
     setFieldValues(prev => ({
       ...prev,
@@ -62,7 +62,7 @@ export default function ExpenseForm({ categories, onSave }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    
+
     if (!selectedCategory) {
       setError('Please select a category')
       return
@@ -85,7 +85,7 @@ export default function ExpenseForm({ categories, onSave }) {
     }
 
     setLoading(true)
-    
+
     try {
       await onSave({
         category_id: selectedCategory,
@@ -108,11 +108,11 @@ export default function ExpenseForm({ categories, onSave }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white shadow rounded-lg p-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       {/* Category Selection */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-2">Category *</label>
-        <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-3">Select Category</label>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {categories.map(cat => (
             <button
               key={cat.id}
@@ -122,15 +122,13 @@ export default function ExpenseForm({ categories, onSave }) {
                 setFieldValues({})
                 setError('')
               }}
-              className={`p-3 border rounded-lg flex flex-col items-center transition ${
-                selectedCategory === cat.id 
-                  ? 'border-2 border-blue-500 bg-blue-50' 
-                  : 'hover:bg-gray-50'
-              }`}
-              style={{ borderColor: selectedCategory === cat.id ? cat.color : '#e5e7eb' }}
+              className={`p-4 border rounded-2xl flex flex-col items-center justify-center transition-all duration-200 ${selectedCategory === cat.id
+                  ? 'border-black bg-white shadow-sm scale-100 ring-1 ring-black'
+                  : 'bg-white border-gray-100 hover:border-gray-300 hover:bg-gray-50 scale-95 opacity-80 hover:opacity-100'
+                }`}
             >
-              <span className="text-2xl mb-1">{cat.icon}</span>
-              <span className="text-sm font-medium">{cat.name}</span>
+              <span className="text-3xl mb-2">{cat.icon}</span>
+              <span className="text-xs font-semibold text-gray-800 tracking-wide text-center">{cat.name}</span>
             </button>
           ))}
         </div>
@@ -138,25 +136,26 @@ export default function ExpenseForm({ categories, onSave }) {
 
       {/* Error Message */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+        <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm font-medium border border-red-100">
           {error}
         </div>
       )}
 
       {selectedCategoryData && (
-        <>
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-5 animate-in fade-in slide-in-from-top-4 duration-300">
+          <h3 className="font-semibold text-gray-900 border-b border-gray-100 pb-3">
+            {selectedCategoryData.name} Details
+          </h3>
+
           {/* Dynamic Fields */}
-          <div className="mb-4 space-y-3">
-            <h3 className="font-medium text-sm text-gray-700">
-              Enter {selectedCategoryData.name} Details
-            </h3>
-            
+          <div className="space-y-4">
             {selectedCategoryData.category_fields?.map((field, index) => (
               <div key={index}>
-                <label className="block text-sm font-medium mb-1">
-                  {field.field_name} {field.is_required && '*'}
+                <label className="block text-sm font-medium text-gray-600 mb-1.5 flex justify-between">
+                  <span>{field.field_name}</span>
+                  {field.is_required && <span className="text-red-400">*</span>}
                 </label>
-                
+
                 {field.field_type === 'number' && (
                   <input
                     type="number"
@@ -164,12 +163,12 @@ export default function ExpenseForm({ categories, onSave }) {
                     min="0"
                     value={fieldValues[field.field_name] || ''}
                     onChange={(e) => handleFieldChange(
-                      field.field_name, 
+                      field.field_name,
                       e.target.value,
                       field.field_type
                     )}
-                    className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                    placeholder={`Enter ${field.field_name}`}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[--color-brand-green] focus:bg-white transition-all sm:text-sm"
+                    placeholder={`0.00`}
                     required={field.is_required}
                   />
                 )}
@@ -179,8 +178,8 @@ export default function ExpenseForm({ categories, onSave }) {
                     type="text"
                     value={fieldValues[field.field_name] || ''}
                     onChange={(e) => handleFieldChange(field.field_name, e.target.value)}
-                    className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                    placeholder={`Enter ${field.field_name}`}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[--color-brand-green] focus:bg-white transition-all sm:text-sm"
+                    placeholder={`Enter ${field.field_name.toLowerCase()}`}
                     required={field.is_required}
                     maxLength="100"
                   />
@@ -190,10 +189,10 @@ export default function ExpenseForm({ categories, onSave }) {
                   <select
                     value={fieldValues[field.field_name] || ''}
                     onChange={(e) => handleFieldChange(field.field_name, e.target.value)}
-                    className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[--color-brand-green] focus:bg-white transition-all sm:text-sm appearance-none"
                     required={field.is_required}
                   >
-                    <option value="">Select...</option>
+                    <option value="">Select option...</option>
                     {field.options?.map(opt => (
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
@@ -203,39 +202,37 @@ export default function ExpenseForm({ categories, onSave }) {
             ))}
           </div>
 
-          {/* Calculated Total Display */}
-          {calculatedTotal > 0 && (
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">Total:</span>
-                <span className="text-xl font-bold text-blue-600">
-                  ₹{calculatedTotal.toFixed(2)}
-                </span>
-              </div>
-            </div>
-          )}
-
           {/* Description (optional) */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Description (Optional)</label>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1.5">Description <span className="text-gray-400 font-normal shadow-none">(Optional)</span></label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[--color-brand-green] focus:bg-white transition-all sm:text-sm resize-none"
               rows="2"
-              placeholder="Add notes about this expense..."
+              placeholder="Add notes..."
               maxLength="200"
             />
           </div>
 
+          {/* Calculated Total Display */}
+          {calculatedTotal > 0 && (
+            <div className="pt-4 border-t border-gray-100 flex justify-between items-end">
+              <span className="text-sm font-medium text-gray-500">Calculated Total</span>
+              <span className="text-2xl font-bold tracking-tight text-black">
+                ₹{calculatedTotal.toFixed(2)}
+              </span>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={loading || calculatedTotal <= 0}
-            className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 transition disabled:bg-blue-300 disabled:cursor-not-allowed"
+            className="w-full bg-[--color-brand-green] hover:bg-[--color-brand-green-hover] text-black font-semibold py-3.5 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:bg-gray-200 disabled:text-gray-400 mt-2 text-sm"
           >
-            {loading ? 'Adding...' : 'Add Expense'}
+            {loading ? 'Adding Expense...' : 'Add Expense'}
           </button>
-        </>
+        </div>
       )}
     </form>
   )

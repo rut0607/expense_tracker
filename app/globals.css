@@ -2,10 +2,12 @@
 
 /* Your custom styles can go here */
 body {
-  background-color: #f3f4f6;
+  background-color: #ffffff;
+  color: #000000;
 }
 
 /* If you need custom theme extensions, use @theme */
 @theme {
-  --color-brand-blue: #3b82f6;
+  --color-brand-green: #73e08b;
+  --color-brand-green-hover: #5acb71;
 }
