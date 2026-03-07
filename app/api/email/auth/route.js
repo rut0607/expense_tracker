@@ -16,15 +16,16 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Generate Gmail OAuth URL
+    // Generate Gmail OAuth URL with FORCED consent
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: [
         'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/userinfo.email'
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/gmail.modify' // Add this for better access
       ],
-      prompt: 'consent',
-      state: session.user.id // Pass user ID to callback
+      prompt: 'consent', // Forces the consent screen EVERY time
+      state: session.user.id
     })
 
     return NextResponse.json({ url })

@@ -1,13 +1,121 @@
 @import "tailwindcss";
 
-/* Your custom styles can go here */
-body {
-  background-color: #ffffff;
-  color: #000000;
+@theme {
+  /* Nike 'Volt' & 'Emerald' - High Energy */
+  --color-brand-green: #d9ff00; 
+  --color-brand-green-hover: #c4e600;
+  --color-nike-black: #000000;
+  --color-nike-white: #ffffff;
+  --color-nike-gray: #f5f5f5;
+  --color-nike-border: #e5e5e5;
 }
 
-/* If you need custom theme extensions, use @theme */
-@theme {
-  --color-brand-green: #73e08b;
-  --color-brand-green-hover: #5acb71;
+@layer base {
+  body {
+    background-color: var(--color-nike-white);
+    color: var(--color-nike-black);
+    /* Clean, professional sans-serif */
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.02em;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Nike-Style Display Typography */
+  h1, h2, h3, .nike-display {
+    font-weight: 950;
+    font-style: italic;
+    text-transform: uppercase;
+    letter-spacing: -0.05em;
+    line-height: 0.9;
+  }
+}
+
+@layer components {
+  /* The "Scoreboard" Card: No shadows, just crisp lines */
+  .nike-container {
+    @apply border border-nike-border bg-white transition-all duration-200;
+  }
+
+  /* Custom Scrollbar for the "Stream" feel */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 2px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--color-nike-black);
+  }
+
+  /* Kinetic Action Button */
+  .nike-btn-primary {
+    @apply bg-black text-white font-black italic uppercase px-8 py-4 
+           hover:bg-zinc-800 transition-all active:scale-95 tracking-widest text-[11px];
+  }
+}
+
+/* Tabular numbers for financial alignment */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes scan {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(300px); opacity: 0; }
+}
+
+@keyframes loading {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+/* Custom Scrollbar for the Rapid Capture */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.1);
+  border-radius: 10px;
+}
+
+@keyframes high_vis_scan {
+  0% { 
+    transform: translateY(-20px); 
+    opacity: 0; 
+  }
+  15% { 
+    opacity: 1; 
+  }
+  85% { 
+    opacity: 1; 
+  }
+  100% { 
+    transform: translateY(400px); 
+    opacity: 0; 
+  }
+}
+
+/* Optional: Smoother transitions for the card aura */
+.group:hover .blur-3xl {
+  filter: blur(80px);
+  opacity: 0.8;
+}
+
+/* Better custom scrollbar for the white card */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f4f4f5;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 10px;
 }

@@ -5,14 +5,14 @@ import { Inter } from 'next/font/google'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'Daily Expense Tracker',
-  description: 'Track your daily expenses',
+  title: 'Vantage | Financial OS',
+  description: 'Track your daily expenses with precision.',
 }
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${inter.className} bg-white antialiased`}>
         <AuthProvider>
           {children}
         </AuthProvider>

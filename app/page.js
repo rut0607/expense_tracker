@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
@@ -12,21 +12,21 @@ import { getUserCategories } from '@/utils/categories'
 import { getTodayExpenses, saveExpense, deleteExpense } from '@/utils/expenses'
 import PDFButton from '@/components/pdf/PDFButton'
 import { 
-  EnvelopeIcon, 
   ArrowPathIcon, 
-  PlusIcon, 
   BoltIcon,
-  ArrowUpRightIcon,
   SparklesIcon,
-  QueueListIcon,
-  CheckBadgeIcon
+  FingerPrintIcon,
+  CpuChipIcon,
+  CircleStackIcon,
+  CommandLineIcon,
+  BanknotesIcon,
+  RadarIcon
 } from '@heroicons/react/24/outline'
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
 
-  // --- STATE ---
   const [categories, setCategories] = useState([])
   const [expenses, setExpenses] = useState([])
   const [pendingTransactions, setPendingTransactions] = useState([])
@@ -35,16 +35,7 @@ export default function DashboardPage() {
   const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
   const [groups, setGroups] = useState([])
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
 
-  // --- MOUSE FOLLOW ENGINE ---
-  useEffect(() => {
-    const handleMouseMove = (e) => setMousePos({ x: e.clientX, y: e.clientY })
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [])
-
-  // --- CORE LOGIC (PRESERVED) ---
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login')
@@ -60,7 +51,7 @@ export default function DashboardPage() {
       if (catResult.success) setCategories(catResult.data)
       const expResult = await getTodayExpenses(session.user.id)
       if (expResult.success) setExpenses(expResult.data)
-    } catch (error) { showMessage('error', 'Sync Failed') } finally { setLoading(false) }
+    } catch (error) { showMessage('error', 'SYNC_ERROR') } finally { setLoading(false) }
   }
 
   const loadPendingTransactions = async () => {
@@ -90,17 +81,17 @@ export default function DashboardPage() {
   const handleAddExpense = async (expenseData) => {
     const result = await saveExpense(session.user.id, expenseData)
     if (result.success) {
-      showMessage('success', 'Entry Secured')
+      showMessage('success', 'SECURED')
       const expResult = await getTodayExpenses(session.user.id)
       if (expResult.success) setExpenses(expResult.data)
-    } else { showMessage('error', 'Log Failed') }
+    } else { showMessage('error', 'FAILED') }
   }
 
   const handleDeleteExpense = async (expenseId) => {
-    if (!confirm('Archive this transaction?')) return
+    if (!confirm('ARCHIVE_TRANSACTION?')) return
     const result = await deleteExpense(expenseId)
     if (result.success) {
-      showMessage('success', 'Entry Removed')
+      showMessage('success', 'PURGED')
       setExpenses(expenses.filter(e => e.id !== expenseId))
     }
   }
@@ -119,30 +110,15 @@ export default function DashboardPage() {
     }
   }
 
-  // --- NEW: APPROVE ALL FEATURE ---
-  const handleApproveAll = async () => {
-    const autoAddable = pendingTransactions.filter(t => t.categoryId);
-    if (autoAddable.length === 0) {
-        showMessage('info', 'Assign categories to items first');
-        return;
-    }
-    
-    showMessage('info', `Processing ${autoAddable.length} items...`);
-    for (const t of autoAddable) {
-        await handlePendingTransaction({ ...t, action: 'add' });
-    }
-    showMessage('success', 'Batch Processing Complete');
-  }
-
   const scanEmails = async () => {
     try {
       const res = await fetch('/api/email/scan', { method: 'POST' })
       const data = await res.json()
       if (data.success) {
-        showMessage('success', data.found > 0 ? `${data.found} New Syncs` : 'Data Current')
+        showMessage('success', data.found > 0 ? `SYNCED_${data.found}` : 'CLEAN_SYNC')
         loadPendingTransactions()
       }
-    } catch (e) { showMessage('error', 'Sync Failed') }
+    } catch (e) { showMessage('error', 'SYNC_ERROR') }
   }
 
   const showMessage = (type, text) => {
@@ -154,187 +130,202 @@ export default function DashboardPage() {
 
   if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen bg-[#F4F4F7] flex items-center justify-center">
-        <div className="w-12 h-12 border-2 border-zinc-200 border-t-emerald-500 rounded-full animate-spin" />
+      <div className="h-screen bg-[#0c0c0c] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-12 h-12 border-2 border-brand-green/20 border-t-brand-green animate-spin rounded-full" />
+          <p className="text-[10px] font-black tracking-[0.5em] text-zinc-500 uppercase">System_Booting</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F4F7] text-zinc-900 selection:bg-emerald-100 relative overflow-hidden">
+    <div className="min-h-screen bg-[#0c0c0c] text-white selection:bg-brand-green selection:text-black relative overflow-x-hidden font-sans">
       
-      {/* --- CRAZY BACKGROUND ENGINE --- */}
+      {/* --- LAYER 0: NEBULA-GRAIN BACKGROUND --- */}
       <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute top-[-5%] left-[-5%] w-[45%] h-[45%] rounded-full bg-emerald-400/15 blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[5%] right-[-5%] w-[35%] h-[35%] rounded-full bg-indigo-400/10 blur-[100px] animate-bounce [animation-duration:12s]" />
+        <div className="absolute inset-0 opacity-[0.04] mix-blend-overlay" 
+             style={{ backgroundImage: `url("https://grainy-gradients.vercel.app/noise.svg")` }} />
+        <div className="absolute top-[-10%] left-[-5%] w-[50%] h-[50%] bg-brand-green/10 blur-[150px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[0%] right-[-5%] w-[40%] h-[40%] bg-zinc-800/30 blur-[130px] rounded-full" />
+        <div className="absolute inset-0 opacity-[0.07]" 
+             style={{ backgroundImage: `radial-gradient(circle, #fff 0.5px, transparent 0.5px)`, backgroundSize: '50px 50px' }} />
+      </div>
+
+      <Navbar />
+
+      <main className="relative z-10 max-w-[1600px] mx-auto px-6 lg:px-12 pt-36 pb-20">
         
-        {/* Spotlight Follow */}
-        <div className="absolute w-[600px] h-[600px] rounded-full opacity-[0.12] blur-[100px] transition-transform duration-500 ease-out"
-          style={{ 
-            background: 'radial-gradient(circle, #10b981 0%, transparent 70%)',
-            transform: `translate(${mousePos.x - 300}px, ${mousePos.y - 300}px)` 
-          }}
-        />
-
-        {/* Dot Grid & Noise */}
-        <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: `radial-gradient(#000 1px, transparent 1px)`, backgroundSize: '40px 40px' }} />
-        <div className="absolute inset-0 opacity-[0.25] mix-blend-overlay" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }} />
-      </div>
-
-      <div className="relative z-10">
-        <Navbar />
-
-        <main className="max-w-[1440px] mx-auto px-6 lg:px-12 pt-32 pb-20">
+        {/* --- SECTION 1: THE TITAN DISPLAY --- */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-12">
           
-          {/* HEADER SECTION */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 gap-8">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">Financial OS v3.0</span>
-              </div>
-              <h1 className="text-6xl font-black tracking-tight text-zinc-950">Vantage Hub<span className="text-emerald-500">.</span></h1>
+          <div className="lg:col-span-8 bg-zinc-900/30 border border-white/5 backdrop-blur-3xl rounded-[3rem] p-12 relative overflow-hidden group">
+            <div className="absolute -right-10 -bottom-10 opacity-[0.02] group-hover:opacity-[0.06] transition-opacity duration-1000">
+              <CircleStackIcon className="w-96 h-96" />
             </div>
-
-            <div className="flex items-center gap-3 bg-white/40 backdrop-blur-md p-2 rounded-[24px] border border-white/40 shadow-xl shadow-zinc-200/50">
-              <button onClick={scanEmails} className="flex items-center gap-2 px-6 py-3.5 bg-zinc-950 text-white rounded-[18px] text-xs font-bold hover:bg-zinc-800 transition-all active:scale-95 shadow-lg shadow-zinc-200">
-                <ArrowPathIcon className="w-4 h-4" />
-                Refresh Sync
-              </button>
-              <PDFButton expenses={expenses} categories={categories} date={new Date().toISOString().split('T')[0]} />
-            </div>
-          </div>
-
-          {/* NOTIFICATION TOAST */}
-          {message.text && (
-            <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[110] px-8 py-3 bg-zinc-900 text-white rounded-full shadow-2xl text-[11px] font-black uppercase tracking-widest animate-in fade-in slide-in-from-top-4">
-              {message.text}
-            </div>
-          )}
-
-          <div className="grid grid-cols-12 gap-8 lg:gap-12">
             
-            {/* LEFT COLUMN */}
-            <div className="col-span-12 lg:col-span-4 space-y-10">
-              
-              {/* Split Cards */}
-              <div className="grid grid-cols-2 gap-5">
-                <div className="bg-white/60 backdrop-blur-md rounded-[32px] p-8 border border-white/60 shadow-sm transition-transform hover:translate-y-[-4px]">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-2">Liability</p>
-                  <p className="text-4xl font-black text-zinc-950 tracking-tighter">₹{splitSummary.owed}</p>
-                </div>
-                <div className="bg-white/60 backdrop-blur-md rounded-[32px] p-8 border border-white/60 shadow-sm transition-transform hover:translate-y-[-4px]">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-2">Assets</p>
-                  <p className="text-4xl font-black text-zinc-950 tracking-tighter">₹{splitSummary.toCollect}</p>
-                </div>
-              </div>
-
-              {/* DETECTION ENGINE (WITH SCROLL) */}
-              {pendingTransactions.length > 0 && (
-                <div className="bg-zinc-950 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden border border-white/5">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/20 blur-[60px] pointer-events-none" />
-                  
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-8">
-                      <div className="flex items-center gap-3">
-                        <SparklesIcon className="w-5 h-5 text-emerald-400 animate-pulse" />
-                        <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-500/80">Detection Engine</h3>
-                      </div>
-                      <div className="bg-white/10 px-2.5 py-1 rounded-lg text-[10px] font-black">{pendingTransactions.length} ITEMS</div>
-                    </div>
-
-                    <div className="relative">
-                      <div className="max-h-[360px] overflow-y-auto pr-2 custom-scrollbar scroll-smooth">
-                        <PendingTransactions transactions={pendingTransactions} onProcess={handlePendingTransaction} groups={groups} userCategories={categories} />
-                      </div>
-                      <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-zinc-950 to-transparent pointer-events-none" />
-                    </div>
-
-                    <div className="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
-                      <button onClick={handleApproveAll} className="flex items-center gap-2 text-[10px] font-black text-emerald-400 hover:text-white transition-all group">
-                         <CheckBadgeIcon className="w-4 h-4 group-hover:scale-110" />
-                         Batch Approve
-                      </button>
-                      <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Encrypted Stream</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* LOG FORM */}
-              <div className="bg-white/80 backdrop-blur-md rounded-[40px] p-10 border border-white shadow-sm">
-                 <div className="flex items-center gap-4 mb-10">
-                    <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-emerald-200">
-                      <PlusIcon className="w-6 h-6 stroke-[3]" />
-                    </div>
-                    <h2 className="text-2xl font-black tracking-tight">Manual Log</h2>
-                 </div>
-                 <ExpenseForm categories={categories} onSave={handleAddExpense} />
-              </div>
+            <div className="flex items-center gap-4 mb-20">
+              <span className="px-3 py-1 bg-brand-green text-black text-[9px] font-black uppercase tracking-widest rounded-full">Vault_Active</span>
+              <div className="h-px w-8 bg-zinc-800" />
+              <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-[0.4em]">Live_Equity_Stream</span>
             </div>
 
-            {/* RIGHT COLUMN */}
-            <div className="col-span-12 lg:col-span-8">
-              {showCategoryManager ? (
-                <div className="bg-white rounded-[48px] p-12 border border-white shadow-2xl">
-                  <CategoryManager categories={categories} onUpdate={() => { loadData(); setShowCategoryManager(false); }} userId={session.user.id} />
-                </div>
-              ) : (
-                <div className="space-y-12">
-                  
-                  {/* HERO STAT CARD */}
-                  <div className="bg-white/30 backdrop-blur-2xl rounded-[56px] p-12 lg:p-20 border border-white shadow-xl relative overflow-hidden">
-                    <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-12">
-                      <div>
-                        <span className="text-[11px] font-black uppercase tracking-[0.4em] text-zinc-400 block mb-8">Daily Liquidity Flow</span>
-                        <h2 className="text-8xl md:text-[10rem] font-black tracking-[calc(-0.06em)] text-zinc-950 leading-[0.75]">
-                          ₹{todayTotal.toLocaleString()}
-                        </h2>
-                      </div>
-                      
-                      <div className="flex flex-col items-start md:items-end gap-4">
-                        <div className="flex -space-x-4">
-                          {[1,2,3].map(i => <div key={i} className="w-14 h-14 rounded-full border-[6px] border-white bg-zinc-100 shadow-sm" />)}
-                          <div className="w-14 h-14 rounded-full border-[6px] border-white bg-zinc-950 flex items-center justify-center text-[11px] font-black text-white shadow-2xl">{expenses.length}</div>
-                        </div>
-                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em]">Verified Units</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* TRANSACTION LIST */}
-                  <div className="bg-white rounded-[48px] p-10 lg:p-14 border border-white shadow-sm">
-                    <div className="flex items-center justify-between mb-12">
-                      <div className="flex items-center gap-3">
-                        <QueueListIcon className="w-6 h-6 text-emerald-500" />
-                        <h3 className="text-2xl font-black tracking-tight">Live Ledger</h3>
-                      </div>
-                      <button onClick={() => setShowCategoryManager(true)} className="text-[10px] font-black uppercase tracking-widest px-6 py-3 bg-zinc-50 border border-zinc-100 rounded-2xl hover:bg-zinc-950 hover:text-white transition-all">Configure Schema</button>
-                    </div>
-                    
-                    {expenses.length === 0 ? (
-                      <div className="py-28 text-center border-4 border-dotted border-zinc-100 rounded-[48px]">
-                        <BoltIcon className="w-12 h-12 text-zinc-200 mx-auto mb-6" />
-                        <h4 className="text-xl font-black italic">Awaiting Data Streams</h4>
-                        <p className="text-zinc-400 text-sm mt-2 font-medium">No activity recorded on the ledger today.</p>
-                      </div>
-                    ) : (
-                      <ExpenseList expenses={expenses} onDelete={handleDeleteExpense} />
-                    )}
-                  </div>
-                </div>
-              )}
+            <div className="relative z-10">
+              <p className="text-zinc-500 text-sm font-medium mb-2 uppercase tracking-tight italic">Aggregate Settlement Today</p>
+              <h1 className="nike-display text-[14vw] lg:text-[11rem] leading-[0.8] tracking-[-0.06em] tabular-nums">
+                ₹{todayTotal.toLocaleString()}
+              </h1>
             </div>
           </div>
-        </main>
-      </div>
 
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(16, 185, 129, 0.2); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(16, 185, 129, 0.5); }
-      `}</style>
+          <div className="lg:col-span-4 flex flex-col gap-6">
+            <button 
+              onClick={scanEmails}
+              className="flex-1 bg-brand-green hover:bg-white text-black rounded-[3rem] p-10 transition-all duration-700 group flex flex-col justify-between items-start overflow-hidden relative"
+            >
+              <ArrowPathIcon className="w-12 h-12 group-hover:rotate-180 transition-transform duration-1000 relative z-10" />
+              <div className="relative z-10">
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Sync_Protocol</span>
+                <h3 className="nike-display text-5xl italic leading-none mt-2 uppercase">Sync_Now</h3>
+              </div>
+            </button>
+            <div className="bg-zinc-900/40 border border-white/5 p-8 rounded-[2.5rem] flex items-center justify-between">
+               <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Reports</span>
+               <PDFButton expenses={expenses} categories={categories} />
+            </div>
+          </div>
+        </div>
+
+        {/* --- SECTION 2: WORKSPACE GRID --- */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+          
+          {/* THE LEDGER (LEFT) */}
+          <div className="lg:col-span-7">
+            <div className="bg-zinc-900/20 border border-white/5 backdrop-blur-md rounded-[3rem] overflow-hidden">
+              <div className="px-10 py-8 border-b border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <CommandLineIcon className="w-5 h-5 text-brand-green" />
+                  <h2 className="text-[10px] font-black uppercase tracking-[0.4em]">Transaction_Audit_Log</h2>
+                </div>
+                <button 
+                  onClick={() => setShowCategoryManager(!showCategoryManager)}
+                  className="text-[9px] font-black text-zinc-500 hover:text-white tracking-widest transition-all uppercase"
+                >
+                  {showCategoryManager ? "× Close_Schema" : "⊕ Manage_Categories"}
+                </button>
+              </div>
+
+              <div className="p-10 min-h-[500px]">
+                {showCategoryManager ? (
+                  <CategoryManager categories={categories} onUpdate={() => { loadData(); setShowCategoryManager(false); }} userId={session.user.id} />
+                ) : (
+                  expenses.length === 0 ? (
+                    <div className="h-[400px] flex flex-col items-center justify-center space-y-4 opacity-20">
+                      <BanknotesIcon className="w-12 h-12" />
+                      <p className="nike-display text-2xl italic">System_Idle</p>
+                    </div>
+                  ) : (
+                    <ExpenseList expenses={expenses} onDelete={handleDeleteExpense} />
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* THE CONTROL (RIGHT) */}
+          <div className="lg:col-span-5 space-y-10">
+            
+            {/* ENHANCED RAPID CAPTURE SCANNER */}
+            {pendingTransactions.length > 0 && (
+              <div className="relative group">
+                {/* Exterior Aura */}
+                <div className="absolute -inset-1.5 bg-brand-green/30 blur-3xl opacity-50 group-hover:opacity-100 transition duration-1000"></div>
+                
+                <div className="relative bg-white text-black p-10 rounded-[3rem] shadow-2xl overflow-hidden border border-brand-green/20">
+                  
+                  {/* Decorative Neural Header */}
+                  <div className="flex items-center justify-between mb-10 relative z-20">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <SparklesIcon className="w-6 h-6 text-brand-green fill-brand-green/10" />
+                        <h3 className="nike-display text-base tracking-widest italic uppercase">Rapid_Capture</h3>
+                      </div>
+                      <span className="text-[8px] font-black text-zinc-400 tracking-[0.3em] mt-1 uppercase">Diagnostics: Active</span>
+                    </div>
+                    <div className="flex items-center gap-3 bg-zinc-900 text-white px-5 py-2 rounded-full shadow-lg">
+                       <div className="w-1.5 h-1.5 bg-brand-green rounded-full animate-pulse shadow-[0_0_8px_#d9ff00]" />
+                       <span className="text-[10px] font-black tabular-nums">{pendingTransactions.length} NEW_UNITS</span>
+                    </div>
+                  </div>
+                  
+                  {/* THE SCANNER BEAM (Updated for high visibility) */}
+                  <div className="absolute top-28 left-0 w-full h-[60px] bg-gradient-to-b from-brand-green/20 to-transparent animate-[high_vis_scan_4s_linear_infinite] pointer-events-none z-10 border-t border-brand-green/60 shadow-[0_-10px_20px_-5px_rgba(217,255,0,0.3)]" />
+
+                  <div className="relative z-20 max-h-[380px] overflow-y-auto custom-scrollbar pr-2">
+                    <PendingTransactions 
+                      transactions={pendingTransactions} 
+                      onProcess={handlePendingTransaction} 
+                      groups={groups} 
+                      userCategories={categories} 
+                    />
+                  </div>
+
+                  {/* Diagnostic Footer */}
+                  <div className="mt-8 pt-6 border-t border-zinc-100 flex items-center justify-between opacity-40">
+                    <div className="flex gap-1.5">
+                      {[1,2,3,4].map(i => <div key={i} className="w-1 h-1 bg-zinc-300 rounded-full" />)}
+                    </div>
+                    <span className="text-[8px] font-bold uppercase tracking-[0.2em]">Neural_Processing_Ready</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SPLIT SUMMARY */}
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-[#111] border border-white/5 p-8 rounded-[2.5rem]">
+                <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-4">Total_Owed</p>
+                <p className="nike-display text-4xl">₹{splitSummary.owed}</p>
+              </div>
+              <div className="bg-zinc-800/20 border border-brand-green/20 p-8 rounded-[2.5rem]">
+                <p className="text-[9px] font-black text-brand-green uppercase tracking-widest mb-4">Receivable</p>
+                <p className="nike-display text-4xl text-brand-green">₹{splitSummary.toCollect}</p>
+              </div>
+            </div>
+
+            {/* MANUAL ENTRY */}
+            <div className="bg-zinc-900/40 border border-white/5 p-10 rounded-[3rem]">
+              <div className="flex items-center gap-3 mb-10 border-l-2 border-brand-green pl-6">
+                <CpuChipIcon className="w-5 h-5 text-zinc-500" />
+                <h3 className="text-[10px] font-black uppercase tracking-widest">Manual_Entry_Terminal</h3>
+              </div>
+              <ExpenseForm categories={categories} onSave={handleAddExpense} />
+            </div>
+          </div>
+        </div>
+
+        {/* --- SYSTEM STATUS FOOTER --- */}
+        <footer className="mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
+           <div className="flex items-center gap-8 text-[9px] font-black text-zinc-600 uppercase tracking-[0.3em]">
+             <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-brand-green rounded-full shadow-[0_0_8px_#d9ff00]" />
+                Connection_Established
+             </div>
+             <span>Build_v2.0.8 // Production_MVP</span>
+           </div>
+           <div className="flex items-center gap-4 text-zinc-400">
+              <span className="text-[9px] font-bold uppercase tracking-widest">Neural Sync Latency: 12ms</span>
+           </div>
+        </footer>
+
+      </main>
+
+      {/* --- NOTIFICATION ENGINE --- */}
+      {message.text && (
+        <div className="fixed bottom-12 right-12 z-[200] bg-brand-green text-black px-10 py-5 rounded-2xl nike-display text-2xl italic shadow-[0_20px_60px_rgba(217,255,0,0.3)] animate-in slide-in-from-bottom-10 duration-500">
+          {message.text}
+        </div>
+      )}
     </div>
   )
 }

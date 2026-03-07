@@ -77,6 +77,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    console.log('👤 User ID:', session.user.id)
+
     // Get user preferences
     const { data: userPrefs, error: prefError } = await supabaseAdmin
       .from('user_preferences')
@@ -84,19 +86,89 @@ export async function POST(request) {
       .eq('user_id', session.user.id)
       .single()
 
-    if (prefError || !userPrefs?.gmail_refresh_token) {
+    if (prefError) {
+      console.error('❌ Error fetching preferences:', prefError)
       return NextResponse.json({ 
         success: false, 
-        error: 'Gmail not connected' 
+        error: 'Error fetching user preferences' 
+      }, { status: 500 })
+    }
+
+    if (!userPrefs?.gmail_refresh_token) {
+      console.log('❌ No Gmail token found')
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Gmail not connected. Please connect in settings.' 
       }, { status: 400 })
     }
 
     if (!userPrefs.email_scan_enabled) {
+      console.log('❌ Email scanning not enabled')
       return NextResponse.json({ 
         success: false, 
-        error: 'Email scanning not enabled' 
+        error: 'Email scanning not enabled. Enable it in settings.' 
       }, { status: 400 })
     }
+
+    console.log('✅ Found refresh token, attempting to refresh...')
+
+    // --- FIX: TOKEN REFRESH WITH ERROR HANDLING ---
+    try {
+      oauth2Client.setCredentials({ refresh_token: userPrefs.gmail_refresh_token })
+      
+      // Try to refresh the token
+      const { credentials } = await oauth2Client.refreshAccessToken()
+      console.log('✅ Token refreshed successfully')
+      
+      // Update the stored refresh token if a new one was issued
+      if (credentials.refresh_token && credentials.refresh_token !== userPrefs.gmail_refresh_token) {
+        console.log('🔄 Updating refresh token in database')
+        await supabaseAdmin
+          .from('user_preferences')
+          .update({ 
+            gmail_refresh_token: credentials.refresh_token,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', session.user.id)
+      }
+      
+    } catch (refreshError) {
+      console.error('❌ Token refresh failed:', refreshError)
+      
+      // Check if it's an invalid_grant error (token expired/revoked)
+      if (refreshError.message?.includes('invalid_grant')) {
+        console.log('⚠️ Token invalid, clearing from database')
+        
+        // Clear invalid token
+        await supabaseAdmin
+          .from('user_preferences')
+          .update({ 
+            gmail_refresh_token: null, 
+            email_scan_enabled: false,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', session.user.id)
+        
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Gmail token expired or revoked. Please reconnect in settings.',
+          needsReconnect: true
+        }, { status: 401 })
+      }
+      
+      // Check for grant limit error
+      if (refreshError.message?.includes('grant')) {
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Grant limit reached. Please revoke access from your Google account and reconnect.',
+          needsReconnect: true,
+          needsRevoke: true
+        }, { status: 401 })
+      }
+      
+      throw refreshError
+    }
+    // --- END OF FIX ---
 
     // Default selected banks if none set
     const selectedBanks = userPrefs.selected_banks || [
@@ -107,7 +179,7 @@ export async function POST(request) {
     
     console.log('🏦 Selected banks:', selectedBanks)
 
-    // SIMPLIFIED: Just look for emails from selected banks, no subject filters
+    // Build search query for emails from selected banks
     const bankDomains = selectedBanks
       .map(code => BANK_DOMAINS[code])
       .flat()
@@ -120,11 +192,9 @@ export async function POST(request) {
     
     console.log('🔍 Search query:', query)
 
-    oauth2Client.setCredentials({ refresh_token: userPrefs.gmail_refresh_token })
-    await oauth2Client.refreshAccessToken()
-    
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
     
+    // Search for emails
     const messages = await gmail.users.messages.list({
       userId: 'me',
       q: query,
@@ -136,6 +206,7 @@ export async function POST(request) {
     
     const pendingTransactions = []
 
+    // Process each email
     for (const msg of messages.data.messages || []) {
       console.log(`📧 Processing message: ${msg.id}`)
       
@@ -144,7 +215,7 @@ export async function POST(request) {
         .from('pending_transactions')
         .select('id')
         .eq('email_id', msg.id)
-        .single()
+        .maybeSingle()
 
       if (existing) {
         console.log('⏭️ Already processed, skipping')
@@ -197,7 +268,8 @@ export async function POST(request) {
         console.log('✅ Transaction detected:', {
           amount: parsed.amount,
           merchant: parsed.merchant,
-          confidence: parsed.confidence
+          confidence: parsed.confidence,
+          type: parsed.transactionType || 'debit'
         })
         
         // Store in pending transactions
@@ -211,9 +283,11 @@ export async function POST(request) {
             description: parsed.suggestedDescription || subject,
             date: parsed.date || new Date().toISOString().split('T')[0],
             category: parsed.category || 'Other',
+            transaction_type: parsed.transactionType || 'debit',
             confidence: parsed.confidence || 0.7,
             is_split_candidate: parsed.isSplitCandidate || false,
-            processed: false
+            processed: false,
+            created_at: new Date().toISOString()
           })
           .select()
           .single()
@@ -232,7 +306,10 @@ export async function POST(request) {
     // Update last sync time
     await supabaseAdmin
       .from('user_preferences')
-      .update({ gmail_last_sync: new Date().toISOString() })
+      .update({ 
+        gmail_last_sync: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
       .eq('user_id', session.user.id)
 
     console.log(`✅ Scan complete. Found ${pendingTransactions.length} new transactions`)
@@ -246,9 +323,26 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('❌ Email scan error:', error)
+    
+    // Handle different types of errors
+    let errorMessage = error.message
+    let statusCode = 500
+    
+    if (error.message?.includes('invalid_grant')) {
+      errorMessage = 'Gmail token expired. Please reconnect in settings.'
+      statusCode = 401
+    } else if (error.message?.includes('grant limit')) {
+      errorMessage = 'Grant limit reached. Please revoke access from your Google account and reconnect.'
+      statusCode = 401
+    } else if (error.message?.includes('rate limit')) {
+      errorMessage = 'Rate limit exceeded. Please try again later.'
+      statusCode = 429
+    }
+    
     return NextResponse.json({ 
       success: false,
-      error: error.message 
-    }, { status: 500 })
+      error: errorMessage,
+      details: error.message
+    }, { status: statusCode })
   }
 }

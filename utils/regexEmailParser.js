@@ -1,5 +1,39 @@
 import { BANK_PATTERNS, GENERIC_PATTERNS, DATE_PATTERNS } from './regexPatterns';
 
+// NEW: Detect transaction type (credit or debit)
+function detectTransactionType(text, bank) {
+  const textLower = text.toLowerCase();
+  
+  // Credit indicators (money coming in)
+  if (textLower.includes('credited') || 
+      textLower.includes('received') || 
+      textLower.includes('deposit') ||
+      textLower.includes('added to') ||
+      textLower.includes('refund') ||
+      textLower.includes('cashback') ||
+      textLower.includes('interest')) {
+    return 'credit';
+  }
+  
+  // Debit indicators (money going out)
+  if (textLower.includes('debited') || 
+      textLower.includes('paid') || 
+      textLower.includes('spent') ||
+      textLower.includes('withdrawn') ||
+      textLower.includes('purchase') ||
+      textLower.includes('transaction') ||
+      textLower.includes('payment')) {
+    return 'debit';
+  }
+  
+  // Check patterns in the full text
+  if (/credited|received|deposit|refund|cashback/i.test(text)) return 'credit';
+  if (/debited|paid|spent|purchase|withdrawn/i.test(text)) return 'debit';
+  
+  // Default to debit for most bank transactions
+  return 'debit';
+}
+
 export function parseEmailWithRegex(emailData) {
   console.log('🔍 Regex parser called with:', {
     subject: emailData.subject?.substring(0, 50),
@@ -32,15 +66,19 @@ export function parseEmailWithRegex(emailData) {
   const date = extractDate(fullText);
   console.log('📅 Extracted date:', date);
   
+  // NEW: Detect transaction type (credit/debit)
+  const transactionType = detectTransactionType(fullText, detectedBank);
+  console.log('💳 Transaction type:', transactionType);
+  
   // Determine if split candidate (food delivery, group payments)
   const isSplitCandidate = detectSplitCandidate(fullText, merchant);
   console.log('🤝 Is split candidate:', isSplitCandidate);
   
   // Determine category
-  const category = determineCategory(fullText, merchant);
+  const category = determineCategory(fullText, merchant, transactionType);
   console.log('📂 Category:', category);
   
-  const confidence = calculateConfidence(amount, merchant, date);
+  const confidence = calculateConfidence(amount, merchant, date, transactionType);
   console.log('📊 Confidence:', confidence);
   
   return {
@@ -51,6 +89,7 @@ export function parseEmailWithRegex(emailData) {
     category,
     confidence,
     isSplitCandidate,
+    transactionType, // ← NEW FIELD
     suggestedDescription: subject,
     bank: detectedBank
   };
@@ -195,9 +234,19 @@ function detectSplitCandidate(text, merchant) {
   return isSplit;
 }
 
-function determineCategory(text, merchant) {
+// UPDATED: determineCategory now considers transaction type
+function determineCategory(text, merchant, transactionType) {
   const textLower = text.toLowerCase();
   
+  // If it's a credit (money received), categorize as Income
+  if (transactionType === 'credit') {
+    if (textLower.includes('salary') || textLower.includes('wage')) return 'Income';
+    if (textLower.includes('refund') || textLower.includes('cashback')) return 'Refund';
+    if (textLower.includes('interest')) return 'Interest';
+    return 'Income';
+  }
+  
+  // Debit transactions (expenses)
   if (merchant === 'Zomato' || merchant === 'Swiggy' || textLower.includes('food') || textLower.includes('restaurant') || textLower.includes('cafe')) {
     return 'Food';
   }
@@ -217,12 +266,14 @@ function determineCategory(text, merchant) {
   return 'Other';
 }
 
-function calculateConfidence(amount, merchant, date) {
+// UPDATED: calculateConfidence now considers transaction type
+function calculateConfidence(amount, merchant, date, transactionType) {
   let confidence = 0.5;
   
   if (amount) confidence += 0.2;
   if (merchant && merchant !== 'Unknown') confidence += 0.2;
   if (date) confidence += 0.1;
+  if (transactionType) confidence += 0.1; // NEW: transaction type boosts confidence
   
   // Boost confidence if we have all three
   if (amount && merchant && merchant !== 'Unknown' && date) {
