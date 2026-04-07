@@ -1,33 +1,35 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../../auth/[...nextauth]/route'
-import { supabase } from '@/utils/supabase'
+import { authOptions } from '@/lib/auth'
+import { EmailService } from '@/lib/services/email.service'
+import { createLogger } from '@/lib/utils/logger'
+
+const logger = createLogger('EmailPendingAPI')
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    const { data, error } = await supabase
-      .from('pending_transactions')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .eq('processed', false)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    const emailService = new EmailService(session.user.id)
+    const transactions = await emailService.getPendingTransactions()
 
     return NextResponse.json({ 
       success: true, 
-      transactions: data || [] 
+      transactions 
     })
 
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    logger.error('Failed to fetch pending transactions', error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    )
   }
 }
 
@@ -35,24 +37,34 @@ export async function DELETE(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
     const { id } = await request.json()
     
-    const { error } = await supabase
-      .from('pending_transactions')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', session.user.id)
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'Transaction ID is required' },
+        { status: 400 }
+      )
     }
 
-    return NextResponse.json({ success: true })
+    const emailService = new EmailService(session.user.id)
+    await emailService.ignoreTransaction(id)
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Transaction ignored' 
+    })
 
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    logger.error('Failed to delete transaction', error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    )
   }
 }

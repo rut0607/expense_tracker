@@ -1,43 +1,62 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../auth/[...nextauth]/route'
-import { supabase } from '@/utils/supabase'
+import { authOptions } from '@/lib/auth'
+import { BudgetService } from '@/lib/services/budget.service'
+import { createLogger } from '@/lib/utils/logger'
 
-export async function GET() {
+const logger = createLogger('BudgetsAPI')
+
+// Helper function to get current month in YYYY-MM-DD format
+function getCurrentMonth() {
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    const userId = session.user.id
-    const today = new Date()
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString()
+    const { searchParams } = new URL(request.url)
+    const month = searchParams.get('month')
+    const summary = searchParams.get('summary') === 'true'
 
-    const { data, error } = await supabase
-      .from('budgets')
-      .select(`
-        *,
-        categories (
-          id,
-          name,
-          icon,
-          color
-        )
-      `)
-      .eq('user_id', userId)
-      .eq('month', firstDayOfMonth)
+    const service = new BudgetService(session.user.id)
 
-    if (error) {
-      console.error('Error fetching budgets:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (summary) {
+      // If month is provided, use it, otherwise get current month
+      const targetMonth = month || getCurrentMonth()
+      const budgetSummary = await service.getSummary(targetMonth)
+      return NextResponse.json({ 
+        success: true, 
+        summary: budgetSummary 
+      })
+    } else if (month) {
+      // Return budgets for specific month
+      const budgets = await service.getBudgetsByMonth(month)
+      return NextResponse.json({ 
+        success: true, 
+        budgets 
+      })
+    } else {
+      // Return current month budgets
+      const budgets = await service.getCurrentMonthBudgets()
+      return NextResponse.json({ 
+        success: true, 
+        budgets 
+      })
     }
-
-    // Always return an array, even if empty
-    return NextResponse.json(data || [])
   } catch (error) {
-    console.error('Error in GET /api/budgets:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    logger.error('Budget fetch failed', error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: error.status || 500 }
+    )
   }
 }
 
@@ -45,87 +64,25 @@ export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    const { category_id, monthly_limit } = await request.json()
+    const body = await request.json()
+    const service = new BudgetService(session.user.id)
+    const budget = await service.create(body)
 
-    // Validate input
-    if (!category_id) {
-      return NextResponse.json({ error: 'Category ID is required' }, { status: 400 })
-    }
-
-    if (!monthly_limit || isNaN(monthly_limit) || monthly_limit < 0) {
-      return NextResponse.json({ error: 'Valid monthly limit is required' }, { status: 400 })
-    }
-
-    // Verify category belongs to user
-    const { data: category, error: catError } = await supabase
-      .from('categories')
-      .select('id')
-      .eq('id', category_id)
-      .eq('user_id', session.user.id)
-      .single()
-
-    if (catError || !category) {
-      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
-    }
-
-    const userId = session.user.id
-    const today = new Date()
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString()
-
-    const { data, error } = await supabase
-      .from('budgets')
-      .upsert({
-        user_id: userId,
-        category_id,
-        monthly_limit: parseFloat(monthly_limit),
-        month: firstDayOfMonth,
-        updated_at: new Date().toISOString()
-      })
-      .select()
-
-    if (error) {
-      console.error('Error saving budget:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json(data[0])
+    return NextResponse.json({ 
+      success: true, 
+      budget 
+    }, { status: 201 })
   } catch (error) {
-    console.error('Error in POST /api/budgets:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-}
-
-export async function DELETE(request) {
-  try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const budgetId = searchParams.get('id')
-
-    if (!budgetId) {
-      return NextResponse.json({ error: 'Budget ID required' }, { status: 400 })
-    }
-
-    const { error } = await supabase
-      .from('budgets')
-      .delete()
-      .eq('id', budgetId)
-      .eq('user_id', session.user.id)
-
-    if (error) {
-      console.error('Error deleting budget:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Error in DELETE /api/budgets:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    logger.error('Budget creation failed', error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: error.status || 500 }
+    )
   }
 }

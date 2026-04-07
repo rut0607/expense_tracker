@@ -23,10 +23,10 @@ export async function GET(request) {
     const now = new Date()
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
     
-    // Get users who haven't been processed recently
+    // Get users who haven't been processed recently and have reminders enabled
     const { data: users, error } = await supabaseAdmin
       .from('user_preferences')
-      .select('user_id, telegram_chat_id, reminder_time, last_reminder_sent')
+      .select('user_id, telegram_chat_id, reminder_time')
       .eq('telegram_enabled', true)
       .not('telegram_chat_id', 'is', null)
       .eq('reminder_time', currentTime)
@@ -52,16 +52,23 @@ export async function GET(request) {
         error: r.status === 'rejected' ? r.reason?.message : null
       })))
       
+      // Update last reminder sent for successful users in this batch
+      const successfulIds = batchResults
+        .map((r, idx) => r.status === 'fulfilled' && r.value === 'success' ? batch[idx].user_id : null)
+        .filter(Boolean)
+      
+      if (successfulIds.length > 0) {
+        await supabaseAdmin
+          .from('user_preferences')
+          .update({ last_reminder_sent: new Date().toISOString() })
+          .in('user_id', successfulIds)
+      }
+      
       if (i + BATCH_SIZE < users.length) {
+        console.log(`⏳ Waiting ${BATCH_DELAY}ms before next batch...`)
         await new Promise(resolve => setTimeout(resolve, BATCH_DELAY))
       }
     }
-    
-    // Update last reminder sent for successful users
-    await supabaseAdmin
-      .from('user_preferences')
-      .update({ last_reminder_sent: new Date().toISOString() })
-      .in('user_id', results.filter(r => r.status === 'success').map(r => r.userId))
 
     return NextResponse.json({ 
       success: true, 
@@ -80,64 +87,105 @@ async function processUserReminder(user) {
     console.log(`📊 Processing user ${user.user_id}`)
 
     // Get today's expenses
-    const { data: expenses } = await getTodayExpenses(user.user_id)
-    
-    if (!expenses?.length) {
-      await sendTelegramMessage(
-        user.telegram_chat_id,
-        '📝 *No expenses recorded today*\n\nDon\'t forget to add your daily expenses!'
-      )
-      return 'reminder_sent'
-    }
+    const today = new Date().toISOString().split('T')[0]
+    const { data: expenses, error: expensesError } = await supabaseAdmin
+      .from('expenses')
+      .select(`
+        amount,
+        description,
+        expense_date,
+        categories (
+          name,
+          icon,
+          color
+        )
+      `)
+      .eq('user_id', user.user_id)
+      .eq('expense_date', today)
 
-    // Get categories
+    if (expensesError) throw expensesError
+    
+    // Get categories for PDF
     const { data: categories } = await supabaseAdmin
       .from('categories')
       .select('*')
       .eq('user_id', user.user_id)
 
-    // Generate PDF
-    const today = new Date().toISOString().split('T')[0]
+    // Calculate daily total
+    const dailyTotal = expenses?.reduce((sum, e) => sum + e.amount, 0) || 0
+
+    // If no expenses, send simple reminder
+    if (!expenses?.length) {
+      await sendTelegramMessage(
+        user.telegram_chat_id,
+        `📝 *No expenses recorded today*\n\n` +
+        `Don't forget to add your daily expenses!\n` +
+        `Quick add: \`/add [amount] [description]\``
+      )
+      return 'reminder_sent'
+    }
+
+    // Generate PDF report
     const pdfBuffer = await generatePDF(expenses, categories, today)
 
-    // Upload to storage
-    const fileName = `expenses-${user.user_id}-${today}.pdf`
-    await supabaseAdmin.storage
+    // Upload to storage with proper path
+    const fileName = `expenses/${user.user_id}/${today}.pdf`
+    const { error: uploadError } = await supabaseAdmin.storage
       .from('pdf-reports')
-      .upload(fileName, pdfBuffer, { upsert: true })
+      .upload(fileName, pdfBuffer, { 
+        upsert: true,
+        contentType: 'application/pdf'
+      })
 
+    if (uploadError) throw uploadError
+
+    // Get public URL
     const { data: { publicUrl } } = supabaseAdmin.storage
       .from('pdf-reports')
       .getPublicUrl(fileName)
 
-    // Generate insights FIRST (so we can decide what to send)
-    const { insights } = await generateInsights(user.user_id, supabaseAdmin)
+    // Generate insights
+    const { insights, saved } = await generateInsights(user.user_id, supabaseAdmin)
     
-    // Send PDF
+    // Send PDF report
     await sendTelegramDocument(
       user.telegram_chat_id,
       publicUrl,
       `Expense-Report-${today}.pdf`
     )
 
+    // Prepare summary message
+    let summaryMessage = `📊 *Daily Expense Summary*\n`
+    summaryMessage += `📆 ${new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n\n`
+    
+    // Add top expenses
+    summaryMessage += `*Top Expenses:*\n`
+    expenses.slice(0, 3).forEach(e => {
+      const icon = e.categories?.icon || '📝'
+      summaryMessage += `${icon} ₹${e.amount} - ${e.description || e.categories?.name || 'Expense'}\n`
+    })
+    
+    if (expenses.length > 3) {
+      summaryMessage += `... and ${expenses.length - 3} more\n`
+    }
+    
+    summaryMessage += `\n*Total: ₹${dailyTotal}*`
+
+    // Send summary
+    await sendTelegramMessage(user.telegram_chat_id, summaryMessage)
+
     // Send insights if available
     if (insights?.length && insights[0] !== 'Unable to generate insights at this time.') {
-      // Format insights nicely
-      let insightsMessage = '📊 *Daily Insights*\n\n'
+      let insightsMessage = '🔔 *Quick Insights*\n\n'
       
-      // Separate budget alerts from investment insights
-      const budgetAlerts = insights.filter(i => i.includes('OVERSHOOT') || i.includes('Near Limit'))
-      const investmentInsights = insights.filter(i => !i.includes('OVERSHOOT') && !i.includes('Near Limit'))
-      
-      if (budgetAlerts.length > 0) {
-        insightsMessage += '*Budget Alerts:*\n'
-        insightsMessage += budgetAlerts.map(i => `• ${i}`).join('\n')
-        insightsMessage += '\n\n'
+      // Get budget alerts
+      const alerts = insights.filter(i => i.includes('⚠️') || i.includes('OVERSHOOT') || i.includes('Near Limit'))
+      if (alerts.length > 0) {
+        insightsMessage += alerts.map(i => `• ${i}`).join('\n')
       }
       
-      if (investmentInsights.length > 0) {
-        insightsMessage += '*Investment Tips:*\n'
-        insightsMessage += investmentInsights.map(i => `• ${i}`).join('\n')
+      if (saved > 0) {
+        insightsMessage += `\n\n💰 *Saved:* ₹${saved.toFixed(0)}`
       }
       
       await sendTelegramMessage(user.telegram_chat_id, insightsMessage)

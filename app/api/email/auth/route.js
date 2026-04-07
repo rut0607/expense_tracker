@@ -1,7 +1,10 @@
 import { google } from 'googleapis'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../../auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { NextResponse } from 'next/server'
+import { createLogger } from '@/lib/utils/logger'
+
+const logger = createLogger('EmailAuthAPI')
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -13,24 +16,39 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    // Generate Gmail OAuth URL with FORCED consent
+    // Generate Gmail OAuth URL with forced consent
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: [
         'https://www.googleapis.com/auth/gmail.readonly',
         'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/gmail.modify' // Add this for better access
+        'https://www.googleapis.com/auth/gmail.modify'
       ],
-      prompt: 'consent', // Forces the consent screen EVERY time
+      prompt: 'consent', // Forces the consent screen every time
       state: session.user.id
     })
 
-    return NextResponse.json({ url })
+    logger.info('Gmail auth URL generated', { userId: session.user.id })
+
+    return NextResponse.json({ 
+      success: true,
+      url 
+    })
+
   } catch (error) {
-    console.error('Gmail auth error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    logger.error('Gmail auth error:', error)
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: error.message || 'Failed to generate auth URL' 
+      },
+      { status: 500 }
+    )
   }
 }

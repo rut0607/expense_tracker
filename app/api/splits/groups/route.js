@@ -1,73 +1,68 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../../auth/[...nextauth]/route'
-import { supabase } from '@/utils/supabase'
+import { authOptions } from '@/lib/auth'
+import { SplitService } from '@/lib/services/split.service'
+import { createLogger } from '@/lib/utils/logger'
 
-// Get all groups for user
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+const logger = createLogger('SplitGroupsAPI')
+
+export async function GET(request) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const service = new SplitService(session.user.id)
+    const groups = await service.getGroups()
+
+    return NextResponse.json({
+      success: true,
+      groups
+    })
+  } catch (error) {
+    logger.error('Failed to fetch groups', error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: error.status || 500 }
+    )
   }
-
-  const { data, error } = await supabase
-    .from('split_groups')
-    .select(`
-      *,
-      group_members (*)
-    `)
-    .eq('user_id', session.user.id)
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
-  return NextResponse.json({ success: true, data })
 }
 
-// Create new group
 export async function POST(request) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const { name, description, members } = await request.json()
-
-  // Start a transaction
-  const { data: group, error: groupError } = await supabase
-    .from('split_groups')
-    .insert({
-      user_id: session.user.id,
-      name,
-      description
-    })
-    .select()
-    .single()
-
-  if (groupError) {
-    return NextResponse.json({ error: groupError.message }, { status: 500 })
-  }
-
-  // Add members
-  if (members?.length > 0) {
-    const memberRecords = members.map(m => ({
-      group_id: group.id,
-      user_id: session.user.id,
-      name: m.name,
-      email: m.email,
-      phone: m.phone
-    }))
-
-    const { error: memberError } = await supabase
-      .from('group_members')
-      .insert(memberRecords)
-
-    if (memberError) {
-      return NextResponse.json({ error: memberError.message }, { status: 500 })
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
-  }
 
-  return NextResponse.json({ success: true, data: group })
+    const body = await request.json()
+    
+    if (!body.name) {
+      return NextResponse.json(
+        { success: false, error: 'Group name is required' },
+        { status: 400 }
+      )
+    }
+
+    const service = new SplitService(session.user.id)
+    const group = await service.createGroup(body)
+
+    return NextResponse.json({
+      success: true,
+      group
+    }, { status: 201 })
+  } catch (error) {
+    logger.error('Failed to create group', error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: error.status || 500 }
+    )
+  }
 }

@@ -1,7 +1,7 @@
 // app/api/telegram/send-pdf/route.js
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../../auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { sendTelegramDocument } from '@/utils/telegram'
 import { generatePDF } from '@/utils/pdfGenerator'
 import { getTodayExpenses } from '@/utils/expenses'

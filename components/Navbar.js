@@ -4,16 +4,16 @@ import { useState, useEffect } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { 
-  Squares2X2Icon, 
-  ClockIcon, 
-  BanknotesIcon, 
-  ChartBarIcon, 
+import {
+  Squares2X2Icon,
+  ClockIcon,
+  BanknotesIcon,
+  ChartBarIcon,
   Cog6ToothIcon,
   PowerIcon,
   ArrowRightIcon,
   Bars3Icon,
-  XMarkIcon
+  XMarkIcon,
 } from '@heroicons/react/24/outline'
 
 export default function Navbar() {
@@ -23,13 +23,13 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 20)
+    const handleScroll = () => setIsScrolled(window.scrollY > 24)
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  const isActive = (path) => path === '/' ? pathname === '/' : pathname.startsWith(path)
-  
+  const isActive = (path) => (path === '/' ? pathname === '/' : pathname.startsWith(path))
+
   if (pathname === '/login' || pathname === '/signup') return null
 
   const navLinks = [
@@ -41,134 +41,234 @@ export default function Navbar() {
   ]
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-      isScrolled ? 'pt-4' : 'pt-0'
-    }`}>
-      <div className={`mx-auto transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-        isScrolled ? 'max-w-[900px]' : 'max-w-[1800px]'
-      } px-6`}>
-        
-        <nav className={`relative flex items-center justify-between transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-          isScrolled 
-            ? 'h-16 px-6 bg-white/70 backdrop-blur-2xl rounded-full border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)]' 
-            : 'h-24 px-6 bg-transparent border-b border-transparent'
-        }`}>
-          
-          {/* 1. BRAND - Magnetic Interaction */}
-          <div className="flex items-center">
-            <Link href="/" className="flex items-center gap-3 group">
-              <div className="relative w-8 h-8 bg-black flex items-center justify-center transition-all duration-500 group-hover:rotate-[15deg]">
-                <div className="absolute inset-0 bg-brand-green opacity-0 group-hover:opacity-100 blur-md transition-opacity" />
-                <div className="relative w-2 h-2 bg-brand-green group-hover:bg-white transition-colors" />
+    <>
+      <header
+        className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ease-out pointer-events-none ${
+          isScrolled ? 'pt-4' : 'pt-0 bg-[#050505]/50 backdrop-blur-md border-b border-white/5'
+        }`}
+      >
+        <div
+          className={`mx-auto flex items-center justify-between transition-all duration-500 ${
+            isScrolled ? 'max-w-5xl px-4' : 'max-w-7xl px-6 lg:px-8 h-20'
+          }`}
+        >
+          {/* ── ISLAND 1: BRAND ───────────────────────────────────────── */}
+          <div
+            className={`pointer-events-auto flex items-center transition-all duration-500 ${
+              isScrolled
+                ? 'h-12 px-5 bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.5)]'
+                : 'h-auto px-0 bg-transparent border-transparent'
+            }`}
+          >
+            <Link href="/" className="flex items-center gap-2 group shrink-0">
+              <div className="relative w-6 h-6 flex items-center justify-center">
+                <div className="absolute inset-0 rounded bg-orange-500/10 group-hover:bg-orange-500/20 transition-colors duration-300" />
+                <div className="w-2 h-2 rounded-[2px] bg-orange-500 group-hover:rotate-45 transition-transform duration-500" />
               </div>
-              <span className={`nike-display text-xl tracking-tighter transition-all duration-500 ${
-                isScrolled ? 'scale-90 origin-left' : 'scale-100'
-              }`}>
-                VANTAGE<span className="text-brand-green">.</span>
+              <span className="text-sm font-semibold tracking-wide text-white">
+                Vantage<span className="text-orange-500">.</span>
               </span>
             </Link>
           </div>
 
-          {/* 2. NAVIGATION - Voiceflow Pill Style */}
-          <div className={`hidden md:flex items-center transition-all duration-500 p-1 ${
-            isScrolled ? 'bg-zinc-100/50 rounded-full' : 'bg-transparent'
-          }`}>
-            {navLinks.map((link) => {
-              const active = isActive(link.href)
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`relative px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] transition-all duration-300 rounded-full ${
-                    active 
-                      ? 'text-black' 
-                      : 'text-zinc-400 hover:text-black'
-                  }`}
-                >
-                  {/* Sliding Background Indicator */}
-                  {active && (
-                    <div className="absolute inset-0 bg-white rounded-full shadow-sm z-[-1] animate-in fade-in zoom-in-95 duration-300" />
-                  )}
-                  {link.label}
-                </Link>
-              )
-            })}
+          {/* ── ISLAND 2: NAV LINKS (desktop) ─────────────────────────── */}
+          <div
+            className={`pointer-events-auto hidden md:flex items-center transition-all duration-500 ${
+              isScrolled
+                ? 'h-12 px-2 bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.5)]'
+                : 'h-auto px-0 bg-transparent border-transparent'
+            }`}
+          >
+            <nav className="flex items-center gap-1">
+              {navLinks.map((link) => {
+                const active = isActive(link.href)
+                const Icon = link.icon
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`relative flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium transition-all duration-300 group overflow-hidden ${
+                      active ? 'text-white' : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Icon
+                      className={`w-4 h-4 shrink-0 transition-colors duration-300 ${
+                        active ? 'text-orange-400' : 'text-neutral-500 group-hover:text-neutral-300'
+                      }`}
+                    />
+                    {link.label}
+
+                    {/* Active Neon Horizon Underline */}
+                    {active && (
+                      <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-[2px] bg-orange-500 rounded-t-full shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+                    )}
+                  </Link>
+                )
+              })}
+            </nav>
           </div>
 
-          {/* 3. IDENTITY - Compact & Precise */}
-          <div className="flex items-center gap-4">
-            {session ? (
-              <div className="flex items-center gap-3">
-                <div className={`hidden lg:flex flex-col items-end transition-opacity duration-500 ${isScrolled ? 'opacity-0 w-0' : 'opacity-100'}`}>
-                  <span className="text-[10px] font-black text-brand-green uppercase tracking-widest italic leading-none">Verified</span>
-                  <span className="text-sm font-bold text-black uppercase tracking-tight">{session.user?.name?.split(' ')[0]}</span>
+          {/* ── ISLAND 3: USER / AUTH ─────────────────────────────────── */}
+          <div
+            className={`pointer-events-auto flex items-center transition-all duration-500 ${
+              isScrolled
+                ? 'h-12 px-2 pl-3 bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.5)]'
+                : 'h-auto px-0 bg-transparent border-transparent'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              {session ? (
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2.5 px-2">
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-500 to-orange-700 flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-inner">
+                      {session.user?.name?.charAt(0).toUpperCase()}
+                    </div>
+                    {/* Hides name seamlessly when scrolled */}
+                    <span
+                      className={`text-[13px] font-medium text-neutral-300 whitespace-nowrap transition-all duration-300 origin-left hidden sm:block ${
+                        isScrolled ? 'w-0 opacity-0 scale-x-0' : 'w-auto opacity-100 scale-x-100 pr-2'
+                      }`}
+                    >
+                      {session.user?.name?.split(' ')[0]}
+                    </span>
+                  </div>
+
+                  <div className={`w-[1px] h-4 bg-white/10 hidden sm:block transition-opacity duration-300 ${isScrolled ? 'opacity-0' : 'opacity-100'}`} />
+
+                  <button
+                    onClick={() => signOut()}
+                    title="Sign out"
+                    className="w-8 h-8 flex items-center justify-center rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-all duration-200"
+                  >
+                    <PowerIcon className="w-4 h-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => signOut()}
-                  className={`flex items-center justify-center rounded-full bg-black text-white hover:bg-brand-green hover:text-black transition-all duration-500 ${
-                    isScrolled ? 'w-10 h-10' : 'w-12 h-12'
-                  }`}
-                >
-                  <PowerIcon className="w-5 h-5 stroke-[2.5]" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-6">
-                <Link href="/login" className="text-[11px] font-black text-black uppercase tracking-widest hover:opacity-50">
-                  Login
-                </Link>
-                <Link 
-                  href="/signup" 
-                  className={`nike-btn-primary flex items-center gap-2 transition-all duration-500 ${
-                    isScrolled ? 'py-2 px-6' : 'py-3 px-8'
-                  }`}
-                >
-                  Start <ArrowRightIcon className="w-4 h-4" />
-                </Link>
-              </div>
-            )}
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Link
+                    href="/login"
+                    className="text-[13px] font-medium text-neutral-400 hover:text-white px-3 py-2 transition-colors"
+                  >
+                    Log in
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="flex items-center gap-1.5 bg-white text-black hover:bg-neutral-200 text-[13px] font-medium px-4 py-2 rounded-full transition-all duration-200"
+                  >
+                    Get started <ArrowRightIcon className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              )}
 
-            {/* Mobile Toggle */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 text-black hover:bg-zinc-100 rounded-full transition-colors"
-            >
-              {mobileMenuOpen ? <XMarkIcon className="h-6 w-6" /> : <Bars3Icon className="h-6 w-6" />}
-            </button>
-          </div>
-        </nav>
-      </div>
-
-      {/* MOBILE OVERLAY - Clean Drawer */}
-      {mobileMenuOpen && (
-        <div className="fixed inset-0 top-0 bg-white z-[120] md:hidden p-8 flex flex-col animate-in slide-in-from-right duration-500">
-          <div className="flex justify-between items-center mb-12">
-            <span className="nike-display text-2xl">VANTAGE.</span>
-            <button onClick={() => setMobileMenuOpen(false)} className="p-2 bg-black text-white rounded-full">
-              <XMarkIcon className="w-6 h-6" />
-            </button>
-          </div>
-          <div className="flex flex-col gap-8">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`nike-display text-5xl tracking-tighter ${
-                  isActive(link.href) ? 'text-brand-green italic' : 'text-zinc-200'
-                }`}
+              {/* Mobile Hamburger (Inside right island) */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="md:hidden w-8 h-8 mr-1 flex items-center justify-center rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-all duration-200"
               >
-                {link.label}
-              </Link>
-            ))}
+                <Bars3Icon className="w-5 h-5" />
+              </button>
+            </div>
           </div>
-          <div className="mt-auto">
-            <button onClick={() => signOut()} className="nike-btn-primary w-full py-6 text-xl uppercase tracking-widest">
-              Logout System
-            </button>
+        </div>
+      </header>
+
+      {/* ── MOBILE DRAWER ───────────────────────────────────────────────── */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[200] md:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+
+          {/* Drawer panel */}
+          <div className="absolute right-0 top-0 bottom-0 w-72 bg-[#050505] border-l border-white/5 flex flex-col p-6 shadow-2xl animate-in slide-in-from-right duration-300">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-8">
+              <span className="text-sm font-semibold tracking-wide text-white">
+                Vantage<span className="text-orange-500">.</span>
+              </span>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 text-neutral-400 hover:text-white transition-colors"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Links */}
+            <nav className="flex flex-col gap-2">
+              {navLinks.map((link) => {
+                const active = isActive(link.href)
+                const Icon = link.icon
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`relative flex items-center gap-3 px-4 py-3.5 rounded-xl text-[14px] font-medium transition-all duration-200 overflow-hidden ${
+                      active
+                        ? 'bg-white/5 text-white'
+                        : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-orange-400' : 'text-neutral-500'}`} />
+                    {link.label}
+                    {active && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-orange-500 rounded-r-full shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+                    )}
+                  </Link>
+                )
+              })}
+            </nav>
+
+            {/* Footer */}
+            <div className="mt-auto pt-6 border-t border-white/5">
+              {session ? (
+                <>
+                  <div className="flex items-center gap-3 px-2 mb-4">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-500 to-orange-700 flex items-center justify-center text-sm font-medium text-white shrink-0">
+                      {session.user?.name?.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="text-[14px] font-medium text-white truncate">
+                        {session.user?.name}
+                      </span>
+                      <span className="text-[12px] text-neutral-500 truncate">
+                        {session.user?.email}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => signOut()}
+                    className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-red-500/10 text-neutral-400 hover:text-red-400 text-[14px] font-medium py-3 rounded-xl transition-all duration-200"
+                  >
+                    <PowerIcon className="w-4 h-4" />
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <Link
+                    href="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center justify-center py-3 text-[14px] font-medium text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
+                  >
+                    Log in
+                  </Link>
+                  <Link
+                    href="/signup"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center justify-center py-3 text-[14px] font-medium text-black bg-white hover:bg-neutral-200 rounded-xl transition-colors"
+                  >
+                    Get started
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
-    </header>
+    </>
   )
 }

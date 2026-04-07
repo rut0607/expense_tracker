@@ -1,82 +1,34 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../../auth/[...nextauth]/route'
-import { supabase } from '@/utils/supabase'
+import { authOptions } from '@/lib/auth'
+import { SplitService } from '@/lib/services/split.service'
+import { createLogger } from '@/lib/utils/logger'
 
-export async function GET() {
+const logger = createLogger('SplitSummaryAPI')
+
+// GET /api/splits/summary - Get pending amounts across all groups
+export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    const userId = session.user.id
-
-    // Get all split expenses where user is involved
-    const { data: splitExpenses, error } = await supabase
-      .from('split_expenses')
-      .select(`
-        *,
-        split_shares (
-          *,
-          group_members (*)
-        ),
-        groups:split_groups (*)
-      `)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching split summary:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    let owed = 0
-    let toCollect = 0
-    const pendingSettlements = []
-    const recentSplits = []
-
-    splitExpenses?.forEach(expense => {
-      // Add to recent splits
-      recentSplits.push({
-        id: expense.id,
-        description: expense.description,
-        merchant: expense.paid_to,
-        totalAmount: expense.total_amount,
-        myShare: expense.my_share,
-        date: expense.created_at
-      })
-
-      // Calculate pending settlements from shares
-      expense.split_shares?.forEach(share => {
-        if (!share.settled) {
-          if (share.member_id !== userId) {
-            // Someone owes money to user
-            toCollect += share.amount
-            pendingSettlements.push({
-              id: share.id,
-              friendName: share.group_members?.name || 'Friend',
-              amount: share.amount,
-              type: 'collect',
-              description: expense.description
-            })
-          }
-        }
-      })
-    })
+    const service = new SplitService(session.user.id)
+    const summary = await service.getPendingSummary()
 
     return NextResponse.json({
       success: true,
-      summary: {
-        owed,
-        toCollect,
-        pendingSettlements,
-        recentSplits
-      }
+      summary
     })
-
   } catch (error) {
-    console.error('Split summary error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    logger.error('Failed to get pending summary', error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: error.status || 500 }
+    )
   }
 }

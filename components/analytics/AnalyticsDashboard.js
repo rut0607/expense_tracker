@@ -19,15 +19,55 @@ export default function AnalyticsDashboard() {
 
   const fetchAnalytics = async () => {
     try {
-      const res = await fetch('/api/analytics/summary')
-      const result = await res.json()
+      // Get current month
+      const today = new Date()
+      const currentMonth = today.toISOString().slice(0, 7)
       
-      console.log('Analytics data:', result)
+      // Fetch category analysis for current month
+      const categoryRes = await fetch(`/api/analytics/categories?month=${currentMonth}`)
+      const categoryResult = await categoryRes.json()
       
-      if (result.success) {
-        setData(result.data)
+      // Fetch trends for daily average
+      const trendsRes = await fetch('/api/analytics/trends?months=1')
+      const trendsResult = await trendsRes.json()
+      
+      console.log('Category data:', categoryResult)
+      console.log('Trends data:', trendsResult)
+      
+      if (categoryResult.success) {
+        // Transform data for dashboard
+        const analysis = categoryResult.analysis
+        const todayStr = today.toISOString().split('T')[0]
+        
+        // Calculate today's spending from dailySpending
+        const todaySpent = analysis.dailySpending?.[todayStr] || 0
+        
+        // Calculate this week's spending
+        const weekAgo = new Date()
+        weekAgo.setDate(weekAgo.getDate() - 7)
+        let weekTotal = 0
+        Object.entries(analysis.dailySpending || {}).forEach(([date, amount]) => {
+          if (date >= weekAgo.toISOString().split('T')[0]) {
+            weekTotal += amount
+          }
+        })
+        
+        setData({
+          periods: {
+            today: todaySpent,
+            week: weekTotal,
+            month: analysis.summary.totalSpent || 0
+          },
+          averages: {
+            daily: analysis.summary.averagePerDay || 0
+          },
+          categories: analysis.categories || [],
+          insights: {
+            topCategory: analysis.categories?.[0] || null
+          }
+        })
       } else {
-        setError(result.error || 'Failed to load analytics')
+        setError(categoryResult.error || 'Failed to load analytics')
       }
     } catch (err) {
       console.error('Fetch error:', err)
